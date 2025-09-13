@@ -62,6 +62,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "n2o4-cli"
+version = "0.1.0"
+dependencies = [
+ "n2o4",
+]
+
+[[package]]
 name = "petgraph"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
