@@ -4,8 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+indexmap = "2.11.1"
 petgraph = "0.8.2"
 redb = "3.0.1"
+smol_str = "0.3.2"
+thiserror = "2.0.16"
+twox-hash = "2.1.2"
 
 [workspace]
 members = [".", "cli"]
