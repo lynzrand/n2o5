@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 indexmap = "2.11.1"
 petgraph = "0.8.2"
+rayon = "1.11.0"
 redb = "3.0.1"
 smol_str = "0.3.2"
 thiserror = "2.0.16"

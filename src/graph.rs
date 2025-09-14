@@ -2,7 +2,9 @@
 
 use std::{
     any::Any,
+    borrow::Cow,
     error::Error,
+    ffi::{OsStr, OsString},
     fmt::Debug,
     path::{Path, PathBuf},
     process::Command,
@@ -19,7 +21,7 @@ use smol_str::SmolStr;
 pub struct BuildGraph {
     nodes: Vec<BuildNode>,
     files: IndexSet<PathBuf>,
-    graph: DiGraphMap<BuildId, ()>,
+    pub(crate) graph: DiGraphMap<BuildId, ()>,
 }
 
 impl BuildGraph {
@@ -51,6 +53,10 @@ impl BuildGraph {
 
     pub fn lookup_build(&self, build_id: BuildId) -> Option<&BuildNode> {
         self.nodes.get(build_id.0)
+    }
+
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
     }
 }
 
@@ -147,14 +153,29 @@ impl GraphBuilder {
     pub fn lookup_build(&self, build_id: BuildId) -> Option<&BuildNode> {
         self.graph.lookup_build(build_id)
     }
+
+    /// Finish building the graph, returning it if valid.
+    pub fn build(self) -> Result<BuildGraph, BuildError> {
+        if petgraph::algo::is_cyclic_directed(&self.graph.graph) {
+            return Err(BuildError::ContainsCycle);
+        }
+        Ok(self.graph)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum BuildError {
+    #[error("The build graph contains a cycle")]
+    ContainsCycle,
 }
 
 /// Represents a single node being built.
 #[derive(Debug)]
 pub struct BuildNode {
-    pub command: BuildCommand,
+    pub command: BuildMethod,
     pub ins: Vec<FileId>,
     pub outs: Vec<FileId>,
+    pub restat: bool,
 }
 
 /// A callback to invoke as a build step.
@@ -168,10 +189,10 @@ pub struct BuildNode {
 type BuildCallback =
     Box<dyn Fn(&dyn Any) -> Result<(), Box<dyn Error + Send + Sync>> + Send + Sync>;
 
-/// Represents the command to use within a build node.
-pub enum BuildCommand {
+/// Represents the method to build the target within a build node.
+pub enum BuildMethod {
     /// A real, command-line command to run.
-    SubCommand(Command),
+    SubCommand(BuildCommand),
 
     /// A callback function to invoke. Includes a name for version checking & debugging.
     ///
@@ -182,7 +203,7 @@ pub enum BuildCommand {
     Phony,
 }
 
-impl Debug for BuildCommand {
+impl Debug for BuildMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::SubCommand(arg0) => f.debug_tuple("SubCommand").field(arg0).finish(),
@@ -196,4 +217,10 @@ impl Debug for BuildCommand {
             Self::Phony => f.debug_tuple("Phony").finish(),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct BuildCommand {
+    pub executable: PathBuf,
+    pub args: Vec<Cow<'static, OsStr>>,
 }
