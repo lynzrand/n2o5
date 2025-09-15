@@ -10,6 +10,7 @@ rayon = "1.11.0"
 redb = "3.0.1"
 smol_str = "0.3.2"
 thiserror = "2.0.16"
+tracing = "0.1.41"
 twox-hash = "2.1.2"
 
 [workspace]

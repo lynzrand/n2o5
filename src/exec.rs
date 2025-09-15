@@ -3,9 +3,14 @@
 use std::{
     any::Any,
     collections::{HashMap, HashSet},
+    ops::ControlFlow,
+    path::PathBuf,
     process::Command,
     sync::{Arc, mpsc},
+    time::SystemTime,
 };
+
+use tracing::warn;
 
 use crate::graph::{BuildGraph, BuildId, BuildNode};
 
@@ -28,7 +33,7 @@ enum FileStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BuildStatus {
+enum BuildStatusKind {
     /// The build hasn't been checked yet
     Fresh,
     /// The build is currently outdated and needs running
@@ -37,6 +42,31 @@ enum BuildStatus {
     UpToDate,
     /// Building has failed
     Failed,
+    /// Building has succeeded
+    Succeeded,
+    /// Cannot run because a dependency has failed
+    Skipped,
+}
+
+impl BuildStatusKind {
+    fn is_finished(self) -> bool {
+        matches!(
+            self,
+            BuildStatusKind::UpToDate
+                | BuildStatusKind::Failed
+                | BuildStatusKind::Succeeded
+                | BuildStatusKind::Skipped
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+struct BuildStatus {
+    kind: BuildStatusKind,
+    n_inputs: usize,
+    /// The number of input nodes of this build that has
+    /// [finished](BuildStatusKind::is_finished).
+    n_inputs_finished: usize,
 }
 
 /// The executor that runs a build graph.
@@ -54,7 +84,7 @@ pub struct Executor<'a> {
     /// The starting nodes that have yet to be executed for the build
     starts: HashSet<BuildId>,
     /// The current status of each build node
-    builds: HashMap<BuildId, BuildStatus>,
+    builds: HashMap<BuildId, BuildStatusKind>,
     started: usize,
     finished: usize,
 
@@ -103,7 +133,7 @@ impl<'a> Executor<'a> {
                 continue;
             }
 
-            self.builds.insert(build, BuildStatus::Fresh);
+            self.builds.insert(build, BuildStatusKind::Fresh);
             affected_nodes += 1;
 
             let mut children_count: usize = 0;
@@ -127,75 +157,110 @@ impl<'a> Executor<'a> {
 
         self.build_started = true;
 
-        self.pool.in_place_scope(|pool| {
+        let res = self.pool.in_place_scope(|pool| {
             // Starting nodes
             for &node in &self.starts {
                 let graph = Arc::clone(&self.graph);
                 let tx = tx.clone();
-                pool.spawn(move |_p| {
-                    run_build(
-                        node,
-                        graph.lookup_build(node).expect("Node should exist"),
-                        &(),
-                        tx,
-                    )
-                });
+                pool.spawn(move |_p| run_build(&graph, node, &(), tx));
             }
 
-            todo!("Receive and process results")
-        })
+            while let Ok(msg) = rx.recv() {
+                let stat = match msg.result {
+                    Ok(res) => res,
+                    Err(e) => {
+                        warn!("");
+                        return Err(e);
+                    }
+                };
+            }
+
+            todo!("Receive and process results");
+
+            Ok(())
+        });
     }
 }
 
 struct BuildNodeResult {
     id: BuildId,
     /// The result of the build. Only `Err` if an error on our side fails it.
-    result: std::io::Result<BuildStatus>,
+    result: std::io::Result<BuildStatusKind>,
+}
+
+enum NodeInputKind {
+    UpToDate,
+    Outdated,
+    CannotRead(PathBuf, std::io::Error),
+}
+
+/// Determine if the node is up-to-date by checking its inputs.
+fn stat_node(
+    graph: &BuildGraph,
+    node: &BuildNode,
+    mtime_should_before: SystemTime,
+) -> NodeInputKind {
+    for &file in &node.ins {
+        let path = graph.lookup_path(file).expect("File should exist");
+        let meta = match path.metadata() {
+            Ok(meta) => meta,
+            Err(e) => return NodeInputKind::CannotRead(path.to_owned(), e),
+        };
+        let mtime = match meta.modified() {
+            Ok(t) => t,
+            Err(e) => return NodeInputKind::CannotRead(path.to_owned(), e),
+        };
+        if mtime > mtime_should_before {
+            return NodeInputKind::Outdated;
+        }
+    }
+
+    NodeInputKind::UpToDate
 }
 
 /// Runs the build node
 fn run_build(
+    graph: &BuildGraph,
     id: BuildId,
-    build: &BuildNode,
     state: &dyn Any,
     report: mpsc::Sender<BuildNodeResult>,
 ) {
+    let build = graph.lookup_build(id).expect("Node should exist");
     let cmd = &build.command;
-    let res = 'res: {
-        match cmd {
-            crate::graph::BuildMethod::SubCommand(build_cmd) => {
-                // FIXME: n2 reports that `Command::spawn` leaks file descriptors.
-                // Replace with a manual call to spawn instead.
-                // See: https://github.com/rust-lang/rust/issues/95584
-                let mut cmd = Command::new(&build_cmd.executable);
-                cmd.args(&build_cmd.args);
-
-                let mut child = match cmd.spawn() {
-                    Ok(c) => c,
-                    Err(e) => break 'res Err(e),
-                };
-                let output = match child.wait() {
-                    Ok(o) => o,
-                    Err(e) => break 'res Err(e),
-                };
-
-                if output.success() {
-                    Ok(BuildStatus::UpToDate)
-                } else {
-                    Ok(BuildStatus::Failed)
-                }
-            }
-            crate::graph::BuildMethod::Callback(_name, callback) => match callback(state) {
-                Ok(_) => Ok(BuildStatus::UpToDate),
-                Err(e) => {
-                    eprintln!("Failed to execute build step {_name}: {e}");
-                    Ok(BuildStatus::Failed)
-                }
-            },
-            crate::graph::BuildMethod::Phony => Ok(BuildStatus::UpToDate),
-        }
-    };
+    let res = run_build_inner(state, cmd);
     report
         .send(BuildNodeResult { id, result: res })
         .expect("Failed to send build result");
+}
+
+fn run_build_inner(
+    state: &dyn Any,
+    cmd: &crate::graph::BuildMethod,
+) -> Result<BuildStatusKind, std::io::Error> {
+    match cmd {
+        crate::graph::BuildMethod::SubCommand(build_cmd) => {
+            // FIXME: n2 reports that `Command::spawn` leaks file descriptors.
+            // Replace with a manual call to spawn instead.
+            // See: https://github.com/rust-lang/rust/issues/95584
+            let mut cmd = Command::new(&build_cmd.executable);
+            cmd.args(&build_cmd.args);
+
+            let mut child = cmd.spawn()?;
+            let output = child.wait()?;
+
+            if output.success() {
+                Ok(BuildStatusKind::UpToDate)
+            } else {
+                Ok(BuildStatusKind::Failed)
+            }
+        }
+        crate::graph::BuildMethod::Callback(_name, callback) => match callback(state) {
+            Ok(_) => Ok(BuildStatusKind::UpToDate),
+            Err(e) => {
+                eprintln!("Failed to execute build step {_name}: {e}");
+                Ok(BuildStatusKind::Failed)
+            }
+        },
+        crate::graph::BuildMethod::Phony => Ok(BuildStatusKind::UpToDate),
+    }
 }

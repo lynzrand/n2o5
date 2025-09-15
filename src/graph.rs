@@ -7,7 +7,6 @@ use std::{
     ffi::{OsStr, OsString},
     fmt::Debug,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use indexmap::IndexSet;
@@ -74,11 +73,10 @@ impl BuildGraph {
 /// only for checking build timestamps. You must manually add edges using
 /// [`Self::add_build_dep`] to ensure the correct build order.
 ///
-/// A consequence of this is that you can omit intermediate files that are
-/// generated and consumed within the build graph, if you don't care about their
-/// timestamps (most of the time, you don't as long as the corresponding command
-/// has finished), as long as you keep internal consistency when building the
-/// graph.
+/// A consequence of this is that you can actually skip defining inputs for
+/// files you have already declared as output of preceding commands, and use the
+/// build edge instead. You still need that output file for timestamp checking,
+/// or else the build will always be considered out-of-date.
 #[derive(Default, Debug)]
 pub struct GraphBuilder {
     graph: BuildGraph,
