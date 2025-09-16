@@ -39,7 +39,7 @@ pub struct BuildInfo {
 }
 
 /// A trait for the database caching build and file information.
-pub trait ExecDb: Sync {
+pub trait ExecDb: Send + Sync {
     /// Get the schema version of stored data.
     fn get_schema_version(&self) -> u64;
     /// Destroy all stored data and reset to an empty state.
