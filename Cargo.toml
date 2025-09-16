@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-blake3 = "1.8.2"
 indexmap = "2.11.1"
 petgraph = "0.8.2"
 postcard = "1.1.3"

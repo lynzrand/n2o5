@@ -32,7 +32,7 @@ pub struct BuildInfo {
     pub last_end: Option<SystemTime>,
     /// The hash of the fixed input set (file, env var, etc.) to this build when
     /// it last ran.
-    pub input_set_digest: [u8; 32],
+    pub input_set_digest: [u8; 16],
     /// Additional inputs that was not part of the input set hash, but
     /// should be considered as dependencies for this build.
     pub additional_inputs: Vec<PathBuf>,
