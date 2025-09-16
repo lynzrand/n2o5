@@ -4,7 +4,7 @@ use std::{
     any::Any,
     borrow::Cow,
     error::Error,
-    ffi::{OsStr, OsString},
+    ffi::OsStr,
     fmt::Debug,
     path::{Path, PathBuf},
 };
@@ -12,6 +12,9 @@ use std::{
 use indexmap::IndexSet;
 use petgraph::prelude::DiGraphMap;
 use smol_str::SmolStr;
+
+mod hash;
+pub use hash::{hash_build, hash_input_set};
 
 /// The build graph to be executed.
 ///

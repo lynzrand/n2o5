@@ -6,13 +6,16 @@ use std::{
     ops::ControlFlow,
     path::PathBuf,
     process::Command,
-    sync::{Arc, mpsc},
+    sync::{Arc, RwLock, mpsc},
     time::SystemTime,
 };
 
 use tracing::warn;
 
-use crate::graph::{BuildGraph, BuildId, BuildNode};
+use crate::{
+    db::ExecDb,
+    graph::{BuildGraph, BuildId, BuildNode},
+};
 
 #[derive(Debug)]
 pub struct ExecConfig {
@@ -80,11 +83,13 @@ pub struct Executor<'a> {
     #[allow(clippy::redundant_allocation)]
     graph: Arc<&'a BuildGraph>,
 
+    db: Arc<RwLock<dyn ExecDb>>,
+
     pool: rayon::ThreadPool,
     /// The starting nodes that have yet to be executed for the build
     starts: HashSet<BuildId>,
     /// The current status of each build node
-    builds: HashMap<BuildId, BuildStatusKind>,
+    builds: HashMap<BuildId, BuildStatus>,
     started: usize,
     finished: usize,
 
@@ -92,7 +97,7 @@ pub struct Executor<'a> {
 }
 
 impl<'a> Executor<'a> {
-    pub fn new(cfg: &'a ExecConfig, graph: &'a BuildGraph) -> Self {
+    pub fn new(cfg: &'a ExecConfig, graph: &'a BuildGraph, db: Arc<RwLock<dyn ExecDb>>) -> Self {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(cfg.parallelism)
             .build()
@@ -101,6 +106,7 @@ impl<'a> Executor<'a> {
             cfg,
             graph: Arc::new(graph),
             pool,
+            db,
 
             starts: Default::default(),
             builds: Default::default(),
@@ -133,7 +139,6 @@ impl<'a> Executor<'a> {
                 continue;
             }
 
-            self.builds.insert(build, BuildStatusKind::Fresh);
             affected_nodes += 1;
 
             let mut children_count: usize = 0;
@@ -145,6 +150,16 @@ impl<'a> Executor<'a> {
                 // This is a leaf node, add it to the starts
                 self.starts.insert(build);
             }
+
+            // Initialize/reinit node, no difference either case.
+            self.builds.insert(
+                build,
+                BuildStatus {
+                    kind: BuildStatusKind::Fresh,
+                    n_inputs: children_count,
+                    n_inputs_finished: 0,
+                },
+            );
         }
 
         affected_nodes
@@ -173,6 +188,8 @@ impl<'a> Executor<'a> {
                         return Err(e);
                     }
                 };
+
+                assert!(stat.is_finished());
             }
 
             todo!("Receive and process results");
@@ -226,6 +243,7 @@ fn run_build(
     report: mpsc::Sender<BuildNodeResult>,
 ) {
     let build = graph.lookup_build(id).expect("Node should exist");
+    let node_stat = stat_node(graph, build, todo!());
     let cmd = &build.command;
     let res = run_build_inner(state, cmd);
     report
