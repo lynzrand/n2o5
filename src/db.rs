@@ -1,5 +1,8 @@
 //! Caches the current build status onto disk.
 
+pub mod in_memory;
+pub mod redb;
+
 use std::{
     path::{Path, PathBuf},
     time::SystemTime,
@@ -55,10 +58,10 @@ pub trait ExecDb: Send + Sync {
     fn reset(&mut self);
 
     /// Begin a read transaction. The database may block during this process.
-    fn begin_read(&self) -> Box<dyn DbReader>;
+    fn begin_read<'r>(&'r self) -> Box<dyn DbReader + 'r>;
 
     /// Begin a write transaction. The database may block during this process.
-    fn begin_write(&self) -> Box<dyn DbWriter>;
+    fn begin_write<'w>(&'w self) -> Box<dyn DbWriter + 'w>;
 }
 
 pub trait DbReader {
@@ -72,5 +75,5 @@ pub trait DbWriter {
     fn set_file_info(&mut self, path: &Path, info: FileInfo);
     fn invalidate_file(&mut self, path: &Path);
 
-    fn commit(&mut self);
+    fn commit(self: Box<Self>);
 }
