@@ -9,10 +9,17 @@ use serde::{Deserialize, Serialize};
 
 /// A hash that uniquely identifies a build command.
 ///
-/// Generate one with [`crate::graph::BuildNode::hash_build`].
+/// Generate one with [`crate::graph::hash_build`].
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct BuildHash(pub [u8; 16]);
+pub struct BuildHash(#[serde(with = "serde_bytes")] pub [u8; 16]);
+
+/// A hash of a build's input environments.
+///
+/// Generate one with [`crate::graph::hash_input_set`].
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct InputHash(#[serde(with = "serde_bytes")] pub [u8; 16]);
 
 /// The information associated with a specific file in the DB
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -32,7 +39,7 @@ pub struct BuildInfo {
     pub last_end: Option<SystemTime>,
     /// The hash of the fixed input set (file, env var, etc.) to this build when
     /// it last ran.
-    pub input_set_digest: [u8; 16],
+    pub input_set_digest: InputHash,
     /// Additional inputs that was not part of the input set hash, but
     /// should be considered as dependencies for this build.
     pub additional_inputs: Vec<PathBuf>,
@@ -47,11 +54,23 @@ pub trait ExecDb: Send + Sync {
     /// This might be used on schema version mismatch.
     fn reset(&mut self);
 
+    /// Begin a read transaction. The database may block during this process.
+    fn begin_read(&self) -> Box<dyn DbReader>;
+
+    /// Begin a write transaction. The database may block during this process.
+    fn begin_write(&self) -> Box<dyn DbWriter>;
+}
+
+pub trait DbReader {
     fn get_build_info(&self, hash: BuildHash) -> Option<BuildInfo>;
+    fn get_file_info(&self, path: &Path) -> Option<FileInfo>;
+}
+
+pub trait DbWriter {
     fn set_build_info(&mut self, hash: BuildHash, info: BuildInfo);
     fn invalidate_build(&mut self, hash: BuildHash);
-
-    fn get_file_info(&self, path: &Path) -> Option<FileInfo>;
     fn set_file_info(&mut self, path: &Path, info: FileInfo);
     fn invalidate_file(&mut self, path: &Path);
+
+    fn commit(&mut self);
 }

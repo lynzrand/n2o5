@@ -3,7 +3,7 @@
 use twox_hash::XxHash3_128;
 
 use crate::{
-    db::BuildHash,
+    db::{BuildHash, InputHash},
     graph::{BuildGraph, BuildId, BuildMethod, BuildNode},
 };
 
@@ -48,7 +48,7 @@ pub fn hash_build(node: &BuildNode, graph: &BuildGraph) -> BuildHash {
 ///
 /// This hash is order-independent, to mitigate the difference layout of the
 /// graph between runs.
-pub fn hash_input_set(build_id: BuildId, graph: &BuildGraph) -> [u8; 16] {
+pub fn hash_input_set(build_id: BuildId, graph: &BuildGraph) -> InputHash {
     let mut acc = Acc::default();
     let build = graph.lookup_build(build_id).expect("invalid BuildId");
 
@@ -69,7 +69,7 @@ pub fn hash_input_set(build_id: BuildId, graph: &BuildGraph) -> [u8; 16] {
         }
     }
 
-    acc.finalize()
+    InputHash(acc.finalize())
 }
 
 /// The accumulator for collecting an order-independent hash of input files
