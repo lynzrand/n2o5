@@ -8,4 +8,5 @@ name = "n2o4"
 path = "src/main.rs"
 
 [dependencies]
+clap = { version = "4.5.47", features = ["derive"] }
 n2o4.workspace = true
