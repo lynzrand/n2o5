@@ -3,6 +3,7 @@ use clap::Parser;
 use crate::cli::{Args, NinjaSubcommand};
 
 mod cli;
+mod ninja;
 
 fn main() {
     let argv0 = std::env::args().next();
@@ -10,13 +11,11 @@ fn main() {
         && v.starts_with("ninja")
     {
         let argv = NinjaSubcommand::parse();
-        run_ninja(&argv);
+        ninja::run(&argv);
     } else {
         let argv = Args::parse();
         match argv.subcommand {
-            cli::Subcommand::Ninja(ninja_subcommand) => run_ninja(&ninja_subcommand),
+            cli::Subcommand::Ninja(ninja_subcommand) => ninja::run(&ninja_subcommand),
         }
     }
 }
-
-fn run_ninja(cmd: &NinjaSubcommand) {}
