@@ -183,6 +183,12 @@ pub enum Error {
     #[error("Unknown variable {0}")]
     UnknownVariable(String),
 
+    #[error("Missing required rule variable {0}")]
+    MissingRuleVariable(String),
+
+    #[error("Invalid deps type {0} (expected: gcc|msvc)")]
+    InvalidDepsType(String),
+
     #[error("Unexpected token {0:?} at {1}:{2}")]
     UnexpectedToken(String, usize, usize),
 
@@ -211,12 +217,7 @@ enum Segment<'s> {
 struct Expandable<'s>(pub SmallVec<[Segment<'s>; 1]>);
 
 impl<'s> Expandable<'s> {
-    fn expand(
-        &self,
-        vars: &NestedScope<'s, '_>,
-        ins: &[Cow<'s, str>],
-        output: &[Cow<'s, str>],
-    ) -> Cow<'s, str> {
+    fn expand(&self, scope: &ExpansionScope<'_, 's>) -> Cow<'s, str> {
         let mut res = Cow::Borrowed("");
         for seg in &self.0 {
             match seg {
@@ -227,35 +228,25 @@ impl<'s> Expandable<'s> {
                         res.to_mut().push_str(s);
                     }
                 }
-                Segment::Var(name @ ("in" | "out")) => {
-                    let list = if *name == "in" { ins } else { output };
-                    for (i, s) in list.iter().enumerate() {
-                        if i != 0 {
-                            res.to_mut().push(' ');
-                        }
-                        // try not to copy the string ;)
-                        match s {
-                            Cow::Borrowed(s) => {
-                                let quote = shlex::try_quote(s).expect("failed to quote string");
-                                if res.is_empty() {
-                                    res = quote
-                                } else {
-                                    res.to_mut().push_str(&quote);
-                                }
+                Segment::Var(name) => {
+                    let value = scope.get(name);
+                    match value {
+                        None => {}
+                        Some(Cow::Borrowed(v)) => {
+                            if res.is_empty() {
+                                res = Cow::Borrowed(v);
+                            } else {
+                                res.to_mut().push_str(v);
                             }
-                            Cow::Owned(s) => {
-                                let quote = shlex::try_quote(s).expect("failed to quote string");
-                                res.to_mut().push_str(&quote);
+                        }
+                        Some(Cow::Owned(v)) => {
+                            if res.is_empty() {
+                                res = Cow::Owned(v);
+                            } else {
+                                res.to_mut().push_str(&v);
                             }
                         }
                     }
-                }
-                Segment::Var(name) => {
-                    let var_value = vars
-                        .get(name)
-                        .ok_or(Error::UnknownVariable(name.to_string()))
-                        .unwrap_or(&Cow::Borrowed(""));
-                    res.to_mut().push_str(var_value);
                 }
             }
         }
@@ -263,14 +254,84 @@ impl<'s> Expandable<'s> {
     }
 }
 
+type Scope<'s> = HashMap<&'s str, Cow<'s, str>>;
+type RuleScope<'s> = HashMap<&'s str, Expandable<'s>>;
+
 /// Corresponding to a ninja `rule` block
 #[derive(Debug, Clone)]
 struct Rule<'s> {
-    vars: HashMap<&'s str, Expandable<'s>>,
+    vars: RuleScope<'s>,
+}
+
+/*
+    Ninja documentation:
+    https://ninja-build.org/manual.html#ref_scope
+
+    Variable declarations indented in a build block are scoped to the build
+    block. The full lookup order for a variable expanded in a build block (or
+    the rule it uses) is:
+
+    - Special built-in variables ($in, $out).
+    - Build-level variables from the build block.
+    - Rule-level variables from the rule block (i.e. $command). (Note from
+        the above discussion on expansion that these are expanded "late",
+        and may make use of in-scope bindings like $in.)
+    - File-level variables from the file that the build line was in.
+    - Variables from the file that included that file using the subninja keyword.
+*/
+struct ExpansionScope<'r, 's> {
+    in_files: &'r [Cow<'s, str>],
+    out_files: &'r [Cow<'s, str>],
+    global_scope: &'r Scope<'s>,
+    build_scope: &'r Scope<'s>,
+    rule: &'r Rule<'s>,
+}
+
+impl<'r, 's> ExpansionScope<'r, 's> {
+    fn get(&self, variable: &str) -> Option<Cow<'s, str>> {
+        // 1. special built-in variables
+        if variable == "in" {
+            return Some(
+                shlex::try_join(self.in_files.iter().map(|s| s.as_ref()))
+                    .unwrap()
+                    .into(),
+            );
+        }
+        if variable == "out" {
+            return Some(
+                shlex::try_join(self.out_files.iter().map(|s| s.as_ref()))
+                    .unwrap()
+                    .into(),
+            );
+        }
+
+        // 2. Build-level variables
+        if let Some(v) = self.build_scope.get(variable) {
+            return Some(v.clone());
+        }
+
+        // 3. Rule-level variables (may expand recursively)
+        if let Some(v) = self.rule.vars.get(variable) {
+            return Some(v.expand(self));
+        }
+
+        // 4. Global scope
+        if let Some(v) = self.global_scope.get(variable) {
+            return Some(v.clone());
+        }
+
+        // Not found
+        None
+    }
 }
 
 /// A build statement
 struct Build<'s> {
+    inputs: Vec<Cow<'s, str>>,
+    implicit_inputs: Vec<Cow<'s, str>>,
+    order_only_inputs: Vec<Cow<'s, str>>,
+    outputs: Vec<Cow<'s, str>>,
+
     /// The command line to run (required)
     command: Cow<'s, str>,
     /// Path to an optional Makefile that contains extra implicit dependencies
@@ -293,38 +354,18 @@ struct Build<'s> {
     rspfile_content: Option<Cow<'s, str>>,
 }
 
-struct NestedScope<'s, 'last> {
-    parent: Option<&'last NestedScope<'s, 'last>>,
-    vars: HashMap<&'s str, Cow<'s, str>>,
+struct NinjaFile<'s> {
+    global_scope: Scope<'s>,
+    rules: HashMap<&'s str, Rule<'s>>,
+    builds: Vec<Build<'s>>,
 }
 
-impl<'s, 'last> NestedScope<'s, 'last> {
-    fn new(parent: &'last NestedScope<'s, 'last>) -> Self {
-        Self {
-            parent: Some(parent),
-            vars: HashMap::new(),
-        }
-    }
-
-    fn get(&self, name: &str) -> Option<&Cow<'s, str>> {
-        if let Some(v) = self.vars.get(name) {
-            Some(v)
-        } else if let Some(parent) = self.parent {
-            parent.get(name)
-        } else {
-            None
-        }
-    }
-}
-
-pub fn parse(s: &str) -> Result<(), Error> {
+pub fn parse<'s>(s: &'s str) -> Result<NinjaFile<'s>, Error> {
     use Token::*;
     let mut lexer = Lexer::new(s);
-    let mut global_scope = NestedScope {
-        parent: None,
-        vars: HashMap::new(),
-    };
+    let mut global_scope = Scope::new();
     let mut rules = HashMap::new();
+    let mut builds = Vec::new();
 
     loop {
         let Some(next) = lexer.peek()? else {
@@ -334,7 +375,7 @@ pub fn parse(s: &str) -> Result<(), Error> {
         match next {
             Word("build") => {
                 let build = parse_build(&mut lexer, &global_scope, &rules)?;
-                todo!()
+                builds.push(build);
             }
             Word("rule") => {
                 let (name, rule) = parse_rule(&mut lexer)?;
@@ -348,15 +389,19 @@ pub fn parse(s: &str) -> Result<(), Error> {
                 }
             }
             Word(_) => {
-                let (k, v) = parse_variable_assignment(&mut lexer, &global_scope)?;
-                global_scope.vars.insert(k, v);
+                let (k, v) = parse_variable_assignment(&mut lexer, &[&global_scope])?;
+                global_scope.insert(k, v);
                 // TODO: check top-level vars `builddir` and `ninja_required_version`
             }
             _ => lexer.unexpected()?,
         }
     }
 
-    todo!()
+    Ok(NinjaFile {
+        global_scope,
+        rules,
+        builds,
+    })
 }
 
 fn parse_rule<'s>(lexer: &mut Lexer<'s>) -> Result<(&'s str, Rule<'s>), Error> {
@@ -388,10 +433,10 @@ fn parse_rule<'s>(lexer: &mut Lexer<'s>) -> Result<(&'s str, Rule<'s>), Error> {
 
 fn parse_build<'s>(
     lexer: &mut Lexer<'s>,
-    parent_scope: &NestedScope<'s, '_>,
+    global_scope: &Scope<'s>,
     rules: &HashMap<&'s str, Rule<'s>>,
 ) -> Result<Build<'s>, Error> {
-    let mut scope = NestedScope::new(parent_scope);
+    let mut scope = Scope::new();
 
     // build
     let _ = lexer.next().ok_or(Error::UnexpectedEof)??;
@@ -402,7 +447,7 @@ fn parse_build<'s>(
     loop {
         match lexer.peek()?.ok_or(Error::UnexpectedEof)? {
             tok if tok.can_start_word() => {
-                let output = parse_expand_word(lexer, &scope, true)?;
+                let output = parse_expand_word(lexer, &[global_scope], true)?;
                 outputs.push(output);
                 lexer.skip_spaces();
             }
@@ -430,7 +475,7 @@ fn parse_build<'s>(
     let mut implicit_inputs = Vec::new();
     let mut order_only_inputs = Vec::new();
     while lexer.peek()?.is_some_and(|t| t.can_start_word()) {
-        let input = parse_expand_word(lexer, &scope, true)?;
+        let input = parse_expand_word(lexer, &[global_scope], true)?;
         inputs.push(input);
         lexer.skip_spaces();
     }
@@ -438,7 +483,7 @@ fn parse_build<'s>(
         let _ = lexer.next(); // consume the pipe
         lexer.skip_spaces();
         while lexer.peek()?.is_some_and(|t| t.can_start_word()) {
-            let input = parse_expand_word(lexer, &scope, true)?;
+            let input = parse_expand_word(lexer, &[global_scope], true)?;
             implicit_inputs.push(input);
             lexer.skip_spaces();
         }
@@ -447,7 +492,7 @@ fn parse_build<'s>(
         let _ = lexer.next(); // consume the two-pipe
         lexer.skip_spaces();
         while lexer.peek()?.is_some_and(|t| t.can_start_word()) {
-            let input = parse_expand_word(lexer, &scope, true)?;
+            let input = parse_expand_word(lexer, &[global_scope], true)?;
             order_only_inputs.push(input);
             lexer.skip_spaces();
         }
@@ -463,36 +508,93 @@ fn parse_build<'s>(
     // Vars
     while matches!(lexer.peek()?, Some(Token::Spaces(_))) {
         let _ = lexer.next();
-        let (k, v) = parse_variable_assignment(lexer, &scope)?;
-        scope.vars.insert(k, v);
+        let (k, v) = parse_variable_assignment_no_expand(lexer)?;
+        let exp_scope = ExpansionScope {
+            in_files: &inputs,
+            out_files: &outputs,
+            global_scope,
+            build_scope: &scope,
+            rule,
+        };
+        let v = v.expand(&exp_scope);
+        scope.insert(k, v);
         lexer.eat_if(Token::LineFeed)?;
     }
 
-    expand_build(
+    let exp_scope = ExpansionScope {
+        in_files: &inputs,
+        out_files: &outputs,
+        global_scope,
+        build_scope: &scope,
         rule,
-        &scope,
-        &outputs,
-        &inputs,
-        &implicit_inputs,
-        &order_only_inputs,
-    )
+    };
+    expand_build(rule, &exp_scope, &implicit_inputs, &order_only_inputs)
 }
 
 fn expand_build<'s>(
-    rule: &Rule<'s>,
-    scope: &NestedScope<'s, '_>,
-    output: &[Cow<'s, str>],
-    input: &[Cow<'s, str>],
+    _rule: &Rule<'s>,
+    exp_scope: &ExpansionScope<'_, 's>,
     implicit_input: &[Cow<'s, str>],
     order_only_input: &[Cow<'s, str>],
 ) -> Result<Build<'s>, Error> {
-    todo!()
+    // Required: command
+    let Some(command) = exp_scope.get("command") else {
+        return Err(Error::MissingRuleVariable("command".to_string()));
+    };
+
+    // Optional simple string fields
+    let depfile = exp_scope.get("depfile");
+    let msvc_deps_prefix = exp_scope.get("msvc_deps_prefix");
+    let description = exp_scope.get("description");
+    let dyndep = exp_scope.get("dyndep");
+    let rspfile = exp_scope.get("rspfile");
+    let rspfile_content = exp_scope.get("rspfile_content");
+
+    // Optional enum field: deps
+    let deps = match exp_scope.get("deps") {
+        Some(v) => match v.as_ref() {
+            "gcc" => Some(DepsType::Gcc),
+            "msvc" => Some(DepsType::Msvc),
+            other => return Err(Error::InvalidDepsType(other.to_string())),
+        },
+        None => None,
+    };
+
+    // Boolean flags: generator and restat (truthy if not "" and not "0")
+    let is_truthy = |v: &str| !v.is_empty() && v != "0";
+    let generator = exp_scope
+        .get("generator")
+        .map(|v| is_truthy(v.as_ref()))
+        .unwrap_or(false);
+    let restat = exp_scope
+        .get("restat")
+        .map(|v| is_truthy(v.as_ref()))
+        .unwrap_or(false);
+
+    // Assemble Build
+    Ok(Build {
+        inputs: exp_scope.in_files.to_vec(),
+        implicit_inputs: implicit_input.to_vec(),
+        order_only_inputs: order_only_input.to_vec(),
+        outputs: exp_scope.out_files.to_vec(),
+
+        command,
+        depfile,
+        deps,
+        msvc_deps_prefix,
+        description,
+        dyndep,
+        generator,
+        restat,
+        rspfile,
+        rspfile_content,
+    })
 }
 
-/// Parse a variable assignment
+/// Parse a variable assignment, and expand immediately. Does not support
 fn parse_variable_assignment<'s>(
     lexer: &mut Lexer<'s>,
-    scope: &NestedScope<'s, '_>,
+    scopes: &[&Scope<'s>],
 ) -> Result<(&'s str, Cow<'s, str>), Error> {
     let name = lexer.next().ok_or(Error::UnexpectedEof)??;
     let Token::Word(name) = name else {
@@ -507,7 +609,7 @@ fn parse_variable_assignment<'s>(
     lexer.expect(Token::Equal)?;
     lexer.skip_spaces();
 
-    let value = parse_expand_word(lexer, scope, false)?;
+    let value = parse_expand_word(lexer, scopes, false)?;
 
     lexer.skip_spaces();
 
@@ -541,7 +643,7 @@ fn parse_variable_assignment_no_expand<'s>(
 /// and the corresponding token will be left in the [`Peekable::next()`] on return.
 fn parse_expand_word<'s>(
     lexer: &mut Lexer<'s>,
-    scope: &NestedScope<'s, '_>,
+    scope: &[&Scope<'s>],
     no_space: bool,
 ) -> Result<Cow<'s, str>, Error> {
     let mut res: std::borrow::Cow<'s, str> = std::borrow::Cow::Borrowed("");
@@ -566,7 +668,8 @@ fn parse_expand_word<'s>(
             }
             Token::Variable(name) | Token::BracedVariable(name) => {
                 let var_value = scope
-                    .get(name)
+                    .iter()
+                    .find_map(|x| x.get(name))
                     .ok_or(Error::UnknownVariable(name.to_string()))?;
                 res.to_mut().push_str(var_value);
             }
