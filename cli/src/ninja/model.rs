@@ -24,6 +24,9 @@ pub enum Error {
 
     #[error("An unknown error occurred during lexing")]
     UnknownLexError,
+
+    #[error("Unexpected indentation at top level")]
+    UnexpectedIndentation,
 }
 
 /// Dependency processing type for the `deps` rule variable

@@ -10,7 +10,7 @@ static NINJA_DEFAULT_FILENAME: &str = "build.ninja";
 
 pub fn run(cmd: &NinjaSubcommand) -> anyhow::Result<()> {
     if let Some(path) = &cmd.chdir {
-        std::env::set_current_dir(path).expect_err("failed to change directory");
+        std::env::set_current_dir(path).context("failed to change directory")?;
     }
 
     let file =

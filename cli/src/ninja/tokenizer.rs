@@ -7,6 +7,10 @@ use super::model::Error;
 #[logos(extras = (usize,usize))]
 #[logos(error(LexError, LexError::from_lexer))]
 pub(super) enum Token<'s> {
+    /// A line feed followed by indentation spaces of the next line
+    #[regex(r"\r?\n[ \t]+")]
+    IndentedLineFeed,
+
     /// A line feed without indentation
     #[regex(r"\r?\n")]
     LineFeed,
@@ -137,6 +141,34 @@ impl<'s> Lexer<'s> {
         while let Some(Token::Spaces(_)) = self.peek().ok().flatten() {
             self.next();
         }
+    }
+
+    /// Consume one or more consecutive line breaks and return whether
+    /// the next logical line is indented.
+    ///
+    /// Semantics:
+    /// - Consumes any sequence of:
+    ///     * Token::IndentedLineFeed (newline + indentation)
+    ///     * Token::LineFeed (bare newline)
+    /// - Returns:
+    ///     * true  if the last consumed item was IndentedLineFeed
+    ///     * false if no newline was consumed or the last consumed was bare LineFeed
+    pub(super) fn eat_newlines(&mut self) -> bool {
+        let mut indented = false;
+        loop {
+            match self.peek().ok().flatten() {
+                Some(Token::IndentedLineFeed) => {
+                    let _ = self.next(); // consume newline + indentation
+                    indented = true;
+                }
+                Some(Token::LineFeed) => {
+                    let _ = self.next(); // consume bare newline
+                    indented = false;
+                }
+                _ => break,
+            }
+        }
+        indented
     }
 }
 

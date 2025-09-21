@@ -14,6 +14,13 @@ pub fn parse<'s>(s: &'s str) -> Result<NinjaFile<'s>, Error> {
     let mut builds = Vec::new();
 
     loop {
+        let indented = lexer.eat_newlines();
+        if indented {
+            return Err(Error::UnexpectedIndentation);
+        }
+        if matches!(lexer.peek()?, Some(Spaces(_))) {
+            return Err(Error::UnexpectedIndentation);
+        }
         let Some(next) = lexer.peek()? else {
             break;
         };
@@ -33,6 +40,15 @@ pub fn parse<'s>(s: &'s str) -> Result<NinjaFile<'s>, Error> {
                         peek_pos.1,
                     ));
                 }
+            }
+            Word("include") => {
+                todo!("include directive not implemented")
+            }
+            Word("subninja") => {
+                todo!("subninja directive not implemented")
+            }
+            Word("pool") => {
+                todo!("pool directive not implemented")
             }
             Word(_) => {
                 let (k, v) = parse_variable_assignment(&mut lexer, &[&global_scope])?;
@@ -61,16 +77,20 @@ fn parse_rule<'s>(lexer: &mut Lexer<'s>) -> Result<(&'s str, Rule<'s>), Error> {
         lexer.unexpected()?
     };
     lexer.skip_spaces();
-    lexer.expect(Token::LineFeed)?;
+    // Expect at least one newline, then consume all consecutive newlines and detect indentation
+    match lexer.peek()? {
+        Some(Token::LineFeed) | Some(Token::IndentedLineFeed) => {}
+        _ => lexer.unexpected()?,
+    }
+    let mut indented = lexer.eat_newlines();
 
     let mut scope: RuleScope<'s> = HashMap::new();
 
-    // Loop while we have indented string
-    while matches!(lexer.peek()?, Some(Token::Spaces(_))) {
-        lexer.skip_spaces();
+    // Loop while the next logical line is indented
+    while indented {
         let (k, v) = parse_variable_assignment_no_expand(lexer)?;
         scope.insert(k, v);
-        lexer.eat_if(Token::LineFeed)?;
+        indented = lexer.eat_newlines();
     }
 
     let rule = Rule { vars: scope };
@@ -144,16 +164,15 @@ fn parse_build<'s>(
         }
     }
 
-    // LF, prepare to parse indented variables
-    if lexer.peek()? == Some(Token::LineFeed) {
-        let _ = lexer.next();
-    } else {
-        lexer.unexpected()?
+    // LF(s), prepare to parse indented variables
+    match lexer.peek()? {
+        Some(Token::LineFeed) | Some(Token::IndentedLineFeed) => {}
+        _ => lexer.unexpected()?,
     }
+    let mut indented = lexer.eat_newlines();
 
     // Vars
-    while matches!(lexer.peek()?, Some(Token::Spaces(_))) {
-        let _ = lexer.next();
+    while indented {
         let (k, v) = parse_variable_assignment_no_expand(lexer)?;
         let exp_scope = ExpansionScope {
             in_files: &inputs,
@@ -164,7 +183,7 @@ fn parse_build<'s>(
         };
         let v = v.expand(&exp_scope);
         scope.insert(k, v);
-        lexer.eat_if(Token::LineFeed)?;
+        indented = lexer.eat_newlines();
     }
 
     let exp_scope = ExpansionScope {
