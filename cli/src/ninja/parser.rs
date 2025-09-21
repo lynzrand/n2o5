@@ -1,4 +1,5 @@
 use smallvec::SmallVec;
+use std::path::Path;
 use std::{borrow::Cow, collections::HashMap};
 
 use super::model::{
@@ -6,12 +7,53 @@ use super::model::{
 };
 use super::tokenizer::{Lexer, Token};
 
-pub fn parse<'s>(s: &'s str) -> Result<NinjaFile<'s>, Error> {
-    use Token::*;
-    let mut lexer = Lexer::new(s);
+pub struct ParseSource {
+    sources: elsa::FrozenVec<String>,
+}
+
+impl ParseSource {
+    pub fn new(file: impl AsRef<Path>) -> Self {
+        let file = file.as_ref();
+        let content = std::fs::read_to_string(file).expect("failed to read ninja file");
+        let sources = elsa::FrozenVec::new();
+        sources.push(content);
+        Self { sources }
+    }
+
+    pub fn main_file(&self) -> &str {
+        &self.sources[0]
+    }
+
+    pub fn add_file(&self, file: impl AsRef<Path>) -> &str {
+        let file = file.as_ref();
+        let content = std::fs::read_to_string(file).unwrap_or_else(|e| {
+            panic!("failed to read included ninja file {}: {e}", file.display())
+        });
+        self.sources.push_get(content)
+    }
+}
+
+pub fn parse<'s>(source: &'s ParseSource, s: &'s str) -> Result<NinjaFile<'s>, Error> {
     let mut global_scope = Scope::new();
     let mut rules: HashMap<&'s str, Rule<'s>> = HashMap::new();
     let mut builds = Vec::new();
+    parse_inner(source, s, &mut global_scope, &mut rules, &mut builds)?;
+    Ok(NinjaFile {
+        global_scope,
+        rules,
+        builds,
+    })
+}
+
+fn parse_inner<'s>(
+    source: &'s ParseSource,
+    s: &'s str,
+    global_scope: &mut Scope<'s>,
+    rules: &mut HashMap<&'s str, Rule<'s>>,
+    builds: &mut Vec<Build<'s>>,
+) -> Result<(), Error> {
+    use Token::*;
+    let mut lexer = Lexer::new(s);
 
     loop {
         let indented = lexer.eat_newlines();
@@ -27,7 +69,7 @@ pub fn parse<'s>(s: &'s str) -> Result<NinjaFile<'s>, Error> {
 
         match next {
             Word("build") => {
-                let build = parse_build(&mut lexer, &global_scope, &rules)?;
+                let build = parse_build(&mut lexer, global_scope, rules)?;
                 builds.push(build);
             }
             Word("rule") => {
@@ -42,7 +84,13 @@ pub fn parse<'s>(s: &'s str) -> Result<NinjaFile<'s>, Error> {
                 }
             }
             Word("include") => {
-                todo!("include directive not implemented")
+                // include <filename>
+                let _ = lexer.next();
+                lexer.skip_spaces();
+                let filename = parse_expand_word(&mut lexer, &[global_scope], true)?;
+                lexer.skip_spaces();
+                let file = source.add_file(&*filename);
+                parse_inner(source, file, global_scope, rules, builds)?;
             }
             Word("subninja") => {
                 todo!("subninja directive not implemented")
@@ -51,7 +99,7 @@ pub fn parse<'s>(s: &'s str) -> Result<NinjaFile<'s>, Error> {
                 todo!("pool directive not implemented")
             }
             Word(_) => {
-                let (k, v) = parse_variable_assignment(&mut lexer, &[&global_scope])?;
+                let (k, v) = parse_variable_assignment(&mut lexer, &[global_scope])?;
                 global_scope.insert(k, v);
                 // TODO: check top-level vars `builddir` and `ninja_required_version`
             }
@@ -59,11 +107,7 @@ pub fn parse<'s>(s: &'s str) -> Result<NinjaFile<'s>, Error> {
         }
     }
 
-    Ok(NinjaFile {
-        global_scope,
-        rules,
-        builds,
-    })
+    Ok(())
 }
 
 fn parse_rule<'s>(lexer: &mut Lexer<'s>) -> Result<(&'s str, Rule<'s>), Error> {
