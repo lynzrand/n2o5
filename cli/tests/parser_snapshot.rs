@@ -28,6 +28,4 @@ macro_rules! snapshot_files {
     };
 }
 
-snapshot_files! {
-    depfile,msvc,var_expansion_1,var_expansion_2
-}
+snapshot_files!(depfile, msvc, var_expansion_1, var_expansion_2);

@@ -1,10 +1,13 @@
 use indexmap::IndexMap;
 use smallvec::SmallVec;
 use std::path::Path;
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
+
+use crate::ninja::model::ParseBuildResult;
 
 use super::model::{
-    Build, DepsType, Error, Expandable, ExpansionScope, NinjaFile, Rule, RuleScope, Scope,
+    Build, DepsType, Error, Expandable, ExpansionScope, NinjaFile, PhonyBuild, Rule, RuleScope,
+    Scope,
 };
 use super::tokenizer::{Lexer, Token};
 
@@ -52,23 +55,20 @@ impl ParseSource {
 }
 
 pub fn parse<'s>(source: &'s ParseSource, s: &'s str) -> Result<NinjaFile<'s>, Error> {
-    let mut global_scope = Scope::new();
-    let mut rules: IndexMap<&'s str, Rule<'s>> = IndexMap::new();
-    let mut builds = Vec::new();
-    parse_inner(source, s, &mut global_scope, &mut rules, &mut builds)?;
-    Ok(NinjaFile {
-        global_scope,
-        rules,
-        builds,
-    })
+    let mut file = NinjaFile {
+        global_scope: Default::default(),
+        rules: Default::default(),
+        builds: Default::default(),
+        phony: Default::default(),
+    };
+    parse_inner(source, s, &mut file)?;
+    Ok(file)
 }
 
 fn parse_inner<'s>(
     source: &'s ParseSource,
     s: &'s str,
-    global_scope: &mut Scope<'s>,
-    rules: &mut IndexMap<&'s str, Rule<'s>>,
-    builds: &mut Vec<Build<'s>>,
+    file: &mut NinjaFile<'s>,
 ) -> Result<(), Error> {
     use Token::*;
     let mut lexer = Lexer::new(s);
@@ -87,12 +87,20 @@ fn parse_inner<'s>(
 
         match next {
             Word("build") => {
-                let build = parse_build(&mut lexer, global_scope, rules)?;
-                builds.push(build);
+                let build = parse_build(&mut lexer, file)?;
+                match build {
+                    ParseBuildResult::Build(build) => file.builds.push(build),
+                    ParseBuildResult::Phony(phony_build) => {
+                        let ph = Arc::new(phony_build);
+                        for t in &ph.targets {
+                            file.phony.insert(t.clone(), Arc::clone(&ph));
+                        }
+                    }
+                }
             }
             Word("rule") => {
                 let (name, rule) = parse_rule(&mut lexer)?;
-                if rules.insert(name, rule).is_some() {
+                if file.rules.insert(name, rule).is_some() {
                     let peek_pos = lexer.peeked_pos().unwrap();
                     return Err(Error::UnexpectedToken(
                         format!("redefinition of rule {name}"),
@@ -105,10 +113,10 @@ fn parse_inner<'s>(
                 // include <filename>
                 let _ = lexer.next();
                 lexer.skip_spaces();
-                let filename = parse_expand_word(&mut lexer, &[global_scope], true)?;
+                let filename = parse_expand_word(&mut lexer, &[&file.global_scope], true)?;
                 lexer.skip_spaces();
-                let file = source.add_file(&*filename);
-                parse_inner(source, file, global_scope, rules, builds)?;
+                let file_contents = source.add_file(&*filename);
+                parse_inner(source, file_contents, file)?;
             }
             Word("subninja") => {
                 todo!("subninja directive not implemented")
@@ -117,8 +125,8 @@ fn parse_inner<'s>(
                 todo!("pool directive not implemented")
             }
             Word(_) => {
-                let (k, v) = parse_variable_assignment(&mut lexer, &[global_scope])?;
-                global_scope.insert(k, v);
+                let (k, v) = parse_variable_assignment(&mut lexer, &[&file.global_scope])?;
+                file.global_scope.insert(k, v);
                 // TODO: check top-level vars `builddir` and `ninja_required_version`
             }
             _ => lexer.unexpected()?,
@@ -165,9 +173,8 @@ fn parse_rule<'s>(lexer: &mut Lexer<'s>) -> Result<(&'s str, Rule<'s>), Error> {
 
 fn parse_build<'s>(
     lexer: &mut Lexer<'s>,
-    global_scope: &Scope<'s>,
-    rules: &IndexMap<&'s str, Rule<'s>>,
-) -> Result<Build<'s>, Error> {
+    file: &NinjaFile<'s>,
+) -> Result<ParseBuildResult<'s>, Error> {
     let mut scope = Scope::new();
 
     // build
@@ -176,6 +183,8 @@ fn parse_build<'s>(
         .ok_or(Error::UnexpectedEof("parsing build".into()))??;
     lexer.skip_spaces();
 
+    let io_expand_scope = &[&file.global_scope];
+
     // <outputs>
     let mut outputs = Vec::new();
     loop {
@@ -183,7 +192,7 @@ fn parse_build<'s>(
             "parsing the outputs of a build".into(),
         ))? {
             tok if tok.can_start_word() => {
-                let output = parse_expand_word(lexer, &[global_scope], true)?;
+                let output = parse_expand_word(lexer, io_expand_scope, true)?;
                 outputs.push(output);
                 lexer.skip_spaces();
             }
@@ -202,9 +211,15 @@ fn parse_build<'s>(
     let Token::Word(rule_name) = rule_tok else {
         lexer.unexpected()?
     };
-    let rule = rules
-        .get(rule_name)
-        .ok_or(Error::UnknownVariable(rule_name.to_string()))?;
+    let rule = if rule_name == "phony" {
+        None
+    } else {
+        let rule = file
+            .rules
+            .get(rule_name)
+            .ok_or(Error::UnknownVariable(rule_name.to_string()))?;
+        Some(rule)
+    };
     lexer.skip_spaces();
 
     // <inputs> | <implicit_inputs> || <order_only_inputs>
@@ -213,7 +228,7 @@ fn parse_build<'s>(
     let mut implicit_inputs = Vec::new();
     let mut order_only_inputs = Vec::new();
     while lexer.peek()?.is_some_and(|t| t.can_start_word()) {
-        let input = parse_expand_word(lexer, &[global_scope], true)?;
+        let input = parse_expand_word(lexer, io_expand_scope, true)?;
         inputs.push(input);
         lexer.skip_spaces();
     }
@@ -221,7 +236,7 @@ fn parse_build<'s>(
         let _ = lexer.next(); // consume the pipe
         lexer.skip_spaces();
         while lexer.peek()?.is_some_and(|t| t.can_start_word()) {
-            let input = parse_expand_word(lexer, &[global_scope], true)?;
+            let input = parse_expand_word(lexer, io_expand_scope, true)?;
             implicit_inputs.push(input);
             lexer.skip_spaces();
         }
@@ -230,7 +245,7 @@ fn parse_build<'s>(
         let _ = lexer.next(); // consume the two-pipe
         lexer.skip_spaces();
         while lexer.peek()?.is_some_and(|t| t.can_start_word()) {
-            let input = parse_expand_word(lexer, &[global_scope], true)?;
+            let input = parse_expand_word(lexer, io_expand_scope, true)?;
             order_only_inputs.push(input);
             lexer.skip_spaces();
         }
@@ -249,7 +264,7 @@ fn parse_build<'s>(
         let exp_scope = ExpansionScope {
             in_files: &inputs,
             out_files: &outputs,
-            global_scope,
+            file,
             build_scope: &scope,
             rule,
         };
@@ -261,15 +276,21 @@ fn parse_build<'s>(
     let exp_scope = ExpansionScope {
         in_files: &inputs,
         out_files: &outputs,
-        global_scope,
+        file,
         build_scope: &scope,
         rule,
     };
-    expand_build(rule, &exp_scope, &implicit_inputs, &order_only_inputs)
+
+    if rule_name == "phony" {
+        let phony = expand_phony(&exp_scope, &order_only_inputs)?;
+        Ok(ParseBuildResult::Phony(phony))
+    } else {
+        let build = expand_build(&exp_scope, &implicit_inputs, &order_only_inputs)?;
+        Ok(ParseBuildResult::Build(build))
+    }
 }
 
 fn expand_build<'s>(
-    _rule: &Rule<'s>,
     exp_scope: &ExpansionScope<'_, 's>,
     implicit_input: &[Cow<'s, str>],
     order_only_input: &[Cow<'s, str>],
@@ -325,6 +346,18 @@ fn expand_build<'s>(
         restat,
         rspfile,
         rspfile_content,
+    })
+}
+
+fn expand_phony<'s>(
+    exp_scope: &ExpansionScope<'_, 's>,
+    order_only_input: &[Cow<'s, str>],
+) -> Result<PhonyBuild<'s>, Error> {
+    let description = exp_scope.get("description");
+    Ok(PhonyBuild {
+        targets: exp_scope.out_files.to_vec(),
+        order_only_inputs: order_only_input.to_vec(),
+        description,
     })
 }
 

@@ -419,6 +419,7 @@ dependencies = [
  "anyhow",
  "arcstr",
  "clap",
+ "either",
  "elsa",
  "expect-test",
  "indexmap",

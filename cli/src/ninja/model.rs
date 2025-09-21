@@ -1,6 +1,7 @@
+use either::Either;
 use indexmap::IndexMap;
 use smallvec::SmallVec;
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 /// Errors during parsing of Ninja files.
 #[derive(Clone, PartialEq, Debug, thiserror::Error)]
@@ -118,20 +119,23 @@ pub struct Rule<'s> {
 pub struct ExpansionScope<'r, 's> {
     pub in_files: &'r [Cow<'s, str>],
     pub out_files: &'r [Cow<'s, str>],
-    pub global_scope: &'r Scope<'s>,
+    pub file: &'r NinjaFile<'s>,
     pub build_scope: &'r Scope<'s>,
-    pub rule: &'r Rule<'s>,
+    pub rule: Option<&'r Rule<'s>>,
 }
 
 impl<'r, 's> ExpansionScope<'r, 's> {
     pub fn get(&self, variable: &str) -> Option<Cow<'s, str>> {
         // 1. special built-in variables
         if variable == "in" {
-            return Some(
-                shlex::try_join(self.in_files.iter().map(|s| s.as_ref()))
-                    .unwrap()
-                    .into(),
-            );
+            let it = self.in_files.iter().flat_map(|i| {
+                if let Some(rule) = self.file.phony.get(i) {
+                    Either::Left(rule.targets.iter().map(|x| x.as_ref()))
+                } else {
+                    Either::Right([i.as_ref()].into_iter())
+                }
+            });
+            return Some(shlex::try_join(it).unwrap().into());
         }
         if variable == "out" {
             return Some(
@@ -147,12 +151,14 @@ impl<'r, 's> ExpansionScope<'r, 's> {
         }
 
         // 3. Rule-level variables (may expand recursively)
-        if let Some(v) = self.rule.vars.get(variable) {
+        if let Some(rule) = self.rule
+            && let Some(v) = rule.vars.get(variable)
+        {
             return Some(v.expand(self));
         }
 
         // 4. Global scope
-        if let Some(v) = self.global_scope.get(variable) {
+        if let Some(v) = self.file.global_scope.get(variable) {
             return Some(v.clone());
         }
 
@@ -191,6 +197,19 @@ pub struct Build<'s> {
     pub rspfile_content: Option<Cow<'s, str>>,
 }
 
+/// A `build` statement with the `phony` rule
+#[derive(Debug, Clone)]
+pub struct PhonyBuild<'s> {
+    pub targets: Vec<Cow<'s, str>>,
+    pub order_only_inputs: Vec<Cow<'s, str>>,
+    pub description: Option<Cow<'s, str>>,
+}
+
+pub(crate) enum ParseBuildResult<'s> {
+    Build(Build<'s>),
+    Phony(PhonyBuild<'s>),
+}
+
 /// A complete parsed Ninja file.
 ///
 /// Most values are borrowed from the original string when possible using the `'s` lifetime.
@@ -199,4 +218,5 @@ pub struct NinjaFile<'s> {
     pub global_scope: Scope<'s>,
     pub rules: IndexMap<&'s str, Rule<'s>>,
     pub builds: Vec<Build<'s>>,
+    pub phony: IndexMap<Cow<'s, str>, Arc<PhonyBuild<'s>>>,
 }
