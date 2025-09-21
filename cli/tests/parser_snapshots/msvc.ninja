@@ -1,0 +1,5 @@
+# From: Ninja docs, "deps"
+msvc_deps_prefix = Note: including file:
+rule cc
+  deps = msvc
+  command = cl /showIncludes -c $in /Fo$out

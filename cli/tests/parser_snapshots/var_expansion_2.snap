@@ -1,0 +1,44 @@
+Ok(
+    NinjaFile {
+        global_scope: {
+            "spaced": "foo bar",
+        },
+        rules: {
+            "foo": Rule {
+                vars: {
+                    "command": Expandable(
+                        [
+                            Regular(
+                                "command ",
+                            ),
+                            Var(
+                                "out",
+                            ),
+                        ],
+                    ),
+                },
+            },
+        },
+        builds: [
+            Build {
+                inputs: [],
+                implicit_inputs: [],
+                order_only_inputs: [],
+                outputs: [
+                    "foo bar/baz",
+                    "other file",
+                ],
+                command: "command 'foo bar/baz' 'other file'",
+                depfile: None,
+                deps: None,
+                msvc_deps_prefix: None,
+                description: None,
+                dyndep: None,
+                generator: false,
+                restat: false,
+                rspfile: None,
+                rspfile_content: None,
+            },
+        ],
+    },
+)

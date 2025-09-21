@@ -1,0 +1,7 @@
+# From: Ninja doc, "Lexical Syntax"
+
+rule demo
+  command = echo "this is a demo of $foo"
+
+build out: demo
+  foo = bar

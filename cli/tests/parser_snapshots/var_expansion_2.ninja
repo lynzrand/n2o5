@@ -1,0 +1,7 @@
+# From: Ninja doc, "Lexical Syntax"
+spaced = foo bar
+
+rule foo
+    command = command $out
+
+build $spaced/baz other$ file: foo

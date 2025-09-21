@@ -1,0 +1,37 @@
+Ok(
+    NinjaFile {
+        global_scope: {
+            "msvc_deps_prefix": "Note: including file:",
+        },
+        rules: {
+            "cc": Rule {
+                vars: {
+                    "deps": Expandable(
+                        [
+                            Regular(
+                                "msvc",
+                            ),
+                        ],
+                    ),
+                    "command": Expandable(
+                        [
+                            Regular(
+                                "cl /showIncludes -c ",
+                            ),
+                            Var(
+                                "in",
+                            ),
+                            Regular(
+                                " /Fo",
+                            ),
+                            Var(
+                                "out",
+                            ),
+                        ],
+                    ),
+                },
+            },
+        },
+        builds: [],
+    },
+)

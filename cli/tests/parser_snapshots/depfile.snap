@@ -1,0 +1,35 @@
+Ok(
+    NinjaFile {
+        global_scope: {},
+        rules: {
+            "cc": Rule {
+                vars: {
+                    "depfile": Expandable(
+                        [
+                            Var(
+                                "out",
+                            ),
+                            Regular(
+                                ".d",
+                            ),
+                        ],
+                    ),
+                    "command": Expandable(
+                        [
+                            Regular(
+                                "gcc -MD -MF ",
+                            ),
+                            Var(
+                                "out",
+                            ),
+                            Regular(
+                                ".d [other gcc flags here]",
+                            ),
+                        ],
+                    ),
+                },
+            },
+        },
+        builds: [],
+    },
+)

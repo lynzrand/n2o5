@@ -1,0 +1,44 @@
+Ok(
+    NinjaFile {
+        global_scope: {},
+        rules: {
+            "demo": Rule {
+                vars: {
+                    "command": Expandable(
+                        [
+                            Regular(
+                                "echo \"this is a demo of ",
+                            ),
+                            Var(
+                                "foo",
+                            ),
+                            Regular(
+                                "\"",
+                            ),
+                        ],
+                    ),
+                },
+            },
+        },
+        builds: [
+            Build {
+                inputs: [],
+                implicit_inputs: [],
+                order_only_inputs: [],
+                outputs: [
+                    "out",
+                ],
+                command: "echo \"this is a demo of bar\"",
+                depfile: None,
+                deps: None,
+                msvc_deps_prefix: None,
+                description: None,
+                dyndep: None,
+                generator: false,
+                restat: false,
+                rspfile: None,
+                rspfile_content: None,
+            },
+        ],
+    },
+)
