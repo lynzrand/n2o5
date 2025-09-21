@@ -1,5 +1,6 @@
+use indexmap::IndexMap;
 use smallvec::SmallVec;
-use std::{borrow::Cow, collections::HashMap};
+use std::borrow::Cow;
 
 /// Errors during parsing of Ninja files.
 #[derive(Clone, PartialEq, Debug, thiserror::Error)]
@@ -19,8 +20,8 @@ pub enum Error {
     #[error("Unexpected token {0:?} at {1}:{2}")]
     UnexpectedToken(String, usize, usize),
 
-    #[error("Unexpected end of file")]
-    UnexpectedEof,
+    #[error("Unexpected end of file when {0}")]
+    UnexpectedEof(String),
 
     #[error("An unknown error occurred during lexing")]
     UnknownLexError,
@@ -86,8 +87,8 @@ impl<'s> Expandable<'s> {
     }
 }
 
-pub type Scope<'s> = HashMap<&'s str, Cow<'s, str>>;
-pub type RuleScope<'s> = HashMap<&'s str, Expandable<'s>>;
+pub type Scope<'s> = IndexMap<&'s str, Cow<'s, str>>;
+pub type RuleScope<'s> = IndexMap<&'s str, Expandable<'s>>;
 
 /// Corresponding to a ninja `rule` block
 #[derive(Debug, Clone)]
@@ -196,6 +197,6 @@ pub struct Build<'s> {
 #[derive(Debug, Clone)]
 pub struct NinjaFile<'s> {
     pub global_scope: Scope<'s>,
-    pub rules: HashMap<&'s str, Rule<'s>>,
+    pub rules: IndexMap<&'s str, Rule<'s>>,
     pub builds: Vec<Build<'s>>,
 }

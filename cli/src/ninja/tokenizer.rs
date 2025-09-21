@@ -115,7 +115,9 @@ impl<'s> Lexer<'s> {
     }
 
     pub(super) fn expect(&mut self, expected: Token<'s>) -> Result<(), Error> {
-        let next = self.next().ok_or(Error::UnexpectedEof)??;
+        let next = self.next().ok_or(Error::UnexpectedEof(format!(
+            "expecting token {expected:?}"
+        )))??;
 
         if next == expected {
             Ok(())
@@ -129,7 +131,9 @@ impl<'s> Lexer<'s> {
     }
 
     pub(super) fn unexpected<T>(&mut self) -> Result<T, Error> {
-        let next = self.next().ok_or(Error::UnexpectedEof)??;
+        let next = self.next().ok_or(Error::UnexpectedEof(
+            "expecting some token, got end of file".into(),
+        ))??;
         Err(Error::UnexpectedToken(
             format!("{next:?}"),
             self.inner.extras.0,
@@ -165,6 +169,7 @@ impl<'s> Lexer<'s> {
                     let _ = self.next(); // consume bare newline
                     indented = false;
                 }
+                None => return false, // EOF is always non-indented
                 _ => break,
             }
         }

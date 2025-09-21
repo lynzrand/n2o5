@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use smallvec::SmallVec;
 use std::path::Path;
 use std::{borrow::Cow, collections::HashMap};
@@ -8,6 +9,7 @@ use super::model::{
 use super::tokenizer::{Lexer, Token};
 
 pub struct ParseSource {
+    in_memory: bool,
     sources: elsa::FrozenVec<String>,
 }
 
@@ -17,7 +19,20 @@ impl ParseSource {
         let content = std::fs::read_to_string(file).expect("failed to read ninja file");
         let sources = elsa::FrozenVec::new();
         sources.push(content);
-        Self { sources }
+        Self {
+            in_memory: false,
+            sources,
+        }
+    }
+
+    #[allow(unused)] // mainly for testing
+    pub fn new_in_memory(content: impl Into<String>) -> Self {
+        let sources = elsa::FrozenVec::new();
+        sources.push(content.into());
+        Self {
+            in_memory: true,
+            sources,
+        }
     }
 
     pub fn main_file(&self) -> &str {
@@ -25,6 +40,9 @@ impl ParseSource {
     }
 
     pub fn add_file(&self, file: impl AsRef<Path>) -> &str {
+        if self.in_memory {
+            panic!("cannot include files in in-memory ParseSource");
+        }
         let file = file.as_ref();
         let content = std::fs::read_to_string(file).unwrap_or_else(|e| {
             panic!("failed to read included ninja file {}: {e}", file.display())
@@ -35,7 +53,7 @@ impl ParseSource {
 
 pub fn parse<'s>(source: &'s ParseSource, s: &'s str) -> Result<NinjaFile<'s>, Error> {
     let mut global_scope = Scope::new();
-    let mut rules: HashMap<&'s str, Rule<'s>> = HashMap::new();
+    let mut rules: IndexMap<&'s str, Rule<'s>> = IndexMap::new();
     let mut builds = Vec::new();
     parse_inner(source, s, &mut global_scope, &mut rules, &mut builds)?;
     Ok(NinjaFile {
@@ -49,7 +67,7 @@ fn parse_inner<'s>(
     source: &'s ParseSource,
     s: &'s str,
     global_scope: &mut Scope<'s>,
-    rules: &mut HashMap<&'s str, Rule<'s>>,
+    rules: &mut IndexMap<&'s str, Rule<'s>>,
     builds: &mut Vec<Build<'s>>,
 ) -> Result<(), Error> {
     use Token::*;
@@ -112,11 +130,15 @@ fn parse_inner<'s>(
 
 fn parse_rule<'s>(lexer: &mut Lexer<'s>) -> Result<(&'s str, Rule<'s>), Error> {
     // rule
-    let _ = lexer.next().ok_or(Error::UnexpectedEof)??;
+    let _ = lexer
+        .next()
+        .ok_or(Error::UnexpectedEof("parsing rule".into()))??;
     lexer.skip_spaces();
 
     // <name>
-    let name_tok = lexer.next().ok_or(Error::UnexpectedEof)??;
+    let name_tok = lexer
+        .next()
+        .ok_or(Error::UnexpectedEof("parsing name of rule".into()))??;
     let Token::Word(name) = name_tok else {
         lexer.unexpected()?
     };
@@ -128,7 +150,7 @@ fn parse_rule<'s>(lexer: &mut Lexer<'s>) -> Result<(&'s str, Rule<'s>), Error> {
     }
     let mut indented = lexer.eat_newlines();
 
-    let mut scope: RuleScope<'s> = HashMap::new();
+    let mut scope: RuleScope<'s> = Default::default();
 
     // Loop while the next logical line is indented
     while indented {
@@ -144,18 +166,22 @@ fn parse_rule<'s>(lexer: &mut Lexer<'s>) -> Result<(&'s str, Rule<'s>), Error> {
 fn parse_build<'s>(
     lexer: &mut Lexer<'s>,
     global_scope: &Scope<'s>,
-    rules: &HashMap<&'s str, Rule<'s>>,
+    rules: &IndexMap<&'s str, Rule<'s>>,
 ) -> Result<Build<'s>, Error> {
     let mut scope = Scope::new();
 
     // build
-    let _ = lexer.next().ok_or(Error::UnexpectedEof)??;
+    let _ = lexer
+        .next()
+        .ok_or(Error::UnexpectedEof("parsing build".into()))??;
     lexer.skip_spaces();
 
     // <outputs>
     let mut outputs = Vec::new();
     loop {
-        match lexer.peek()?.ok_or(Error::UnexpectedEof)? {
+        match lexer.peek()?.ok_or(Error::UnexpectedEof(
+            "parsing the outputs of a build".into(),
+        ))? {
             tok if tok.can_start_word() => {
                 let output = parse_expand_word(lexer, &[global_scope], true)?;
                 outputs.push(output);
@@ -170,7 +196,9 @@ fn parse_build<'s>(
     lexer.skip_spaces();
 
     // <rule>
-    let rule_tok = lexer.next().ok_or(Error::UnexpectedEof)??;
+    let rule_tok = lexer
+        .next()
+        .ok_or(Error::UnexpectedEof("parsing the name of a rule".into()))??;
     let Token::Word(rule_name) = rule_tok else {
         lexer.unexpected()?
     };
@@ -305,7 +333,9 @@ fn parse_variable_assignment<'s>(
     lexer: &mut Lexer<'s>,
     scopes: &[&Scope<'s>],
 ) -> Result<(&'s str, Cow<'s, str>), Error> {
-    let name = lexer.next().ok_or(Error::UnexpectedEof)??;
+    let name = lexer.next().ok_or(Error::UnexpectedEof(
+        "parsing the name of an assignment".into(),
+    ))??;
     let Token::Word(name) = name else {
         let (line, col) = lexer.cursor_pos();
         return Err(Error::UnexpectedToken(format!("{name:?}"), line, col));
@@ -325,7 +355,9 @@ fn parse_variable_assignment<'s>(
 fn parse_variable_assignment_no_expand<'s>(
     lexer: &mut Lexer<'s>,
 ) -> Result<(&'s str, Expandable<'s>), Error> {
-    let name = lexer.next().ok_or(Error::UnexpectedEof)??;
+    let name = lexer.next().ok_or(Error::UnexpectedEof(
+        "parsing the name of an assignment".into(),
+    ))??;
     let Token::Word(name) = name else {
         let (line, col) = lexer.cursor_pos();
         return Err(Error::UnexpectedToken(format!("{name:?}"), line, col));
@@ -347,11 +379,12 @@ fn parse_variable_assignment_no_expand<'s>(
 fn parse_expand_word<'s>(
     lexer: &mut Lexer<'s>,
     scope: &[&Scope<'s>],
-    no_space: bool,
+    inline: bool,
 ) -> Result<Cow<'s, str>, Error> {
     let mut res: std::borrow::Cow<'s, str> = std::borrow::Cow::Borrowed("");
     loop {
-        match lexer.peek()?.ok_or(Error::UnexpectedEof)? {
+        let Some(peek) = lexer.peek()? else { break };
+        match peek {
             Token::Word(w) => {
                 if res.is_empty() {
                     res = Cow::Borrowed(w);
@@ -359,7 +392,7 @@ fn parse_expand_word<'s>(
                     res.to_mut().push_str(w);
                 }
             }
-            Token::Spaces(w) if !no_space => {
+            Token::Spaces(w) if !inline => {
                 if res.is_empty() {
                     res = Cow::Borrowed(w);
                 } else {
@@ -376,6 +409,10 @@ fn parse_expand_word<'s>(
                     .ok_or(Error::UnknownVariable(name.to_string()))?;
                 res.to_mut().push_str(var_value);
             }
+            Token::Colon if !inline => res.to_mut().push(':'),
+            Token::Pipe if !inline => res.to_mut().push('|'),
+            Token::TwoPipe if !inline => res.to_mut().push_str("||"),
+            Token::Equal if !inline => res.to_mut().push('='),
             _ => break,
         }
         let _ = lexer.next(); // consume the token just processed
@@ -389,7 +426,8 @@ fn parse_noexpand_word<'s>(lexer: &mut Lexer<'s>) -> Result<Expandable<'s>, Erro
     let mut res = SmallVec::new();
     let mut acc: Option<Cow<'_, str>> = None;
     loop {
-        match lexer.peek()?.ok_or(Error::UnexpectedEof)? {
+        let Some(peek) = lexer.peek()? else { break };
+        match peek {
             Token::Word(w) | Token::Spaces(w) => {
                 if let Some(acc) = acc.as_mut() {
                     acc.to_mut().push_str(w);
@@ -410,6 +448,10 @@ fn parse_noexpand_word<'s>(lexer: &mut Lexer<'s>) -> Result<Expandable<'s>, Erro
                 }
                 res.push(super::model::Segment::Var(name));
             }
+            Token::Colon => acc.get_or_insert_default().to_mut().push(':'),
+            Token::Pipe => acc.get_or_insert_default().to_mut().push('|'),
+            Token::TwoPipe => acc.get_or_insert_default().to_mut().push_str("||"),
+            Token::Equal => acc.get_or_insert_default().to_mut().push('='),
             _ => break,
         }
         let _ = lexer.next(); // consume the token just processed
