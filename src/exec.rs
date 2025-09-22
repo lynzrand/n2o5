@@ -65,20 +65,19 @@ struct BuildStatus {
     n_inputs_finished: usize,
 }
 
+/// Some internal shared state that is passed to each build task.
+struct SharedState<'a> {
+    cfg: &'a ExecConfig,
+    graph: &'a BuildGraph,
+    db: Box<dyn ExecDb>,
+    pool: rayon::ThreadPool,
+    user_state: &'a (dyn Any + Send + Sync),
+}
+
 /// The executor that runs a build graph.
 pub struct Executor<'a> {
-    cfg: &'a ExecConfig,
+    state: Arc<SharedState<'a>>,
 
-    /// The build graph.
-    ///
-    /// Allocation is required because it needs to be accessed from multiple
-    /// threads without clear lifetime constraints.
-    #[allow(clippy::redundant_allocation)]
-    graph: Arc<&'a BuildGraph>,
-
-    db: Arc<dyn ExecDb>,
-
-    pool: rayon::ThreadPool,
     /// The starting nodes that have yet to be executed for the build
     starts: HashSet<BuildId>,
     /// The current status of each build node
@@ -91,16 +90,26 @@ pub struct Executor<'a> {
 }
 
 impl<'a> Executor<'a> {
-    pub fn new(cfg: &'a ExecConfig, graph: &'a BuildGraph, db: Arc<dyn ExecDb>) -> Self {
+    pub fn new(
+        cfg: &'a ExecConfig,
+        graph: &'a BuildGraph,
+        db: Box<dyn ExecDb>,
+        user_state: &'a (dyn Any + Send + Sync),
+    ) -> Self {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(cfg.parallelism)
             .build()
             .unwrap();
-        Self {
+
+        let state = SharedState {
             cfg,
-            graph: Arc::new(graph),
-            pool,
+            graph,
             db,
+            pool,
+            user_state,
+        };
+        Self {
+            state: Arc::new(state),
 
             starts: Default::default(),
             builds: Default::default(),
@@ -137,7 +146,7 @@ impl<'a> Executor<'a> {
             affected_nodes += 1;
 
             let mut children_count: usize = 0;
-            for node in self.graph.build_dependencies(build) {
+            for node in self.state.graph.build_dependencies(build) {
                 children_count += 1;
                 dfs_stack.push(node);
             }
@@ -167,14 +176,14 @@ impl<'a> Executor<'a> {
 
         self.build_started = true;
 
-        self.pool.in_place_scope(|pool| {
+        let state = self.state.clone();
+        state.pool.in_place_scope(|pool| {
             // Starting nodes
             for &node in &self.starts {
                 self.started+=1;
                 start_build(
                     &mut self.builds,
-                    Arc::clone(&self.graph),
-                    Arc::clone(&self.db),
+                    state.clone(),
                     tx.clone(),
                     pool,
                     node,
@@ -226,7 +235,7 @@ impl<'a> Executor<'a> {
                     BuildStatusKind::Started => panic!("Build cannot be started after running"),
                     BuildStatusKind::Succeeded |
                     BuildStatusKind::UpToDate => {
-                        for node in self.graph.build_dependents(id){
+                        for node in self.state.graph.build_dependents(id){
                             let dep = self.builds.get_mut(&node).expect("Build should exist");
                             dep.n_inputs_finished +=1;
                             if dep.n_inputs == dep.n_inputs_finished{
@@ -234,8 +243,7 @@ impl<'a> Executor<'a> {
                                 self.started+=1;
                                 start_build(
                                     &mut self.builds,
-                                    Arc::clone(&self.graph),
-                                    Arc::clone(&self.db),
+                                    state.clone(),
                                     tx.clone(),
                                     pool,
                                     node,
@@ -246,7 +254,7 @@ impl<'a> Executor<'a> {
                     BuildStatusKind::Failed |
                     BuildStatusKind::Skipped => {
                         self.failed+=1;
-                        for node in self.graph.build_dependents(id){
+                        for node in self.state.graph.build_dependents(id){
                             tx.send(BuildNodeResult{
                                 id: node,
                                 result: Ok(BuildStatusKind::Skipped),
@@ -276,14 +284,13 @@ impl<'a> Executor<'a> {
 
 fn start_build<'a>(
     builds: &mut HashMap<BuildId, BuildStatus>,
-    graph: Arc<&'a BuildGraph>,
-    db: Arc<dyn ExecDb>,
+    state: Arc<SharedState<'a>>,
     tx: mpsc::Sender<BuildNodeResult>,
     pool: &rayon::Scope<'a>,
     node: BuildId,
 ) {
     builds.get_mut(&node).expect("Build should exist").kind = BuildStatusKind::Started;
-    pool.spawn(move |_p| run_build(&graph, &*db, node, &(), tx));
+    pool.spawn(move |_p| run_build(state, node, tx));
 }
 struct BuildNodeResult {
     id: BuildId,
@@ -467,13 +474,10 @@ fn invalidate_build(db: &dyn ExecDb, graph: &BuildGraph, build: &BuildNode, buil
 }
 
 /// Runs the build node
-fn run_build(
-    graph: &BuildGraph,
-    db: &dyn ExecDb,
-    id: BuildId,
-    state: &dyn Any,
-    report: mpsc::Sender<BuildNodeResult>,
-) {
+fn run_build(state: Arc<SharedState<'_>>, id: BuildId, report: mpsc::Sender<BuildNodeResult>) {
+    let graph = state.graph;
+    let db = &*state.db;
+
     let build = graph.lookup_build(id).expect("Node should exist");
 
     let span = tracing::info_span!("run_build", ?id, ?build);
@@ -494,7 +498,7 @@ fn run_build(
         }
         NodeInputKind::Outdated => {
             let cmd = &build.command;
-            let build_result = run_build_inner(state, cmd);
+            let build_result = run_build_inner(state.user_state, cmd);
             match &build_result {
                 Ok(BuildStatusKind::Succeeded) => {
                     write_build(db, graph, build, build_id, input_hash);
