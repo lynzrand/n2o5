@@ -4,7 +4,6 @@ use std::{
     any::Any,
     collections::{HashMap, HashSet},
     path::PathBuf,
-    process::Command,
     sync::{Arc, mpsc},
     time::SystemTime,
 };
@@ -15,6 +14,7 @@ use tracing::{info, warn};
 use crate::{
     db::{BuildHash, BuildInfo, ExecDb, InputHash},
     graph::{BuildGraph, BuildId, BuildNode, FileId, hash_build, hash_input_set},
+    world::{LOCAL_WORLD, World},
 };
 
 #[derive(Debug)]
@@ -30,7 +30,7 @@ impl Default for ExecConfig {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BuildStatusKind {
+pub enum BuildStatusKind {
     /// The build hasn't been checked yet
     Fresh,
     /// The build has been started
@@ -70,8 +70,10 @@ struct BuildStatus {
 struct SharedState<'a> {
     cfg: &'a ExecConfig,
     graph: &'a BuildGraph,
+    world: &'a dyn World,
     db: Box<dyn ExecDb>,
     pool: rayon::ThreadPool,
+
     user_state: &'a (dyn Any + Send + Sync),
 }
 
@@ -106,6 +108,7 @@ impl<'a> Executor<'a> {
             cfg,
             graph,
             db,
+            world: &LOCAL_WORLD,
             pool,
             user_state,
         };
@@ -310,6 +313,7 @@ enum NodeInputKind {
 #[tracing::instrument(skip_all)]
 fn stat_node(
     db: &dyn ExecDb,
+    world: &dyn World,
     graph: &BuildGraph,
     node: &BuildNode,
     build_hash: BuildHash,
@@ -369,13 +373,13 @@ fn stat_node(
     let mtime_should_before = build_info.last_start;
     for &file in &node.ins {
         let path = graph.lookup_path(file).expect("File should exist");
-        if !path.exists() {
+        if !world.exists(path) {
             tracing::debug!("Outdated: input file {path:?} does not exist");
             return NodeInputKind::Missing(file);
         }
-        let mtime = match mtime(path) {
+        let mtime = match world.mtime(path) {
             Ok(value) => value,
-            Err(value) => return value,
+            Err(e) => return NodeInputKind::CannotRead(path.to_owned(), e),
         };
         if mtime > mtime_should_before {
             tracing::debug!(
@@ -397,9 +401,9 @@ fn stat_node(
             tracing::debug!("Outdated: additional input file {file:?} does not exist");
             return NodeInputKind::Outdated;
         }
-        let mtime = match mtime(file) {
+        let mtime = match world.mtime(file) {
             Ok(value) => value,
-            Err(value) => return value,
+            Err(e) => return NodeInputKind::CannotRead(file.to_owned(), e),
         };
         if mtime > mtime_should_before {
             tracing::debug!(
@@ -413,16 +417,6 @@ fn stat_node(
 
     tracing::debug!("Up-to-date: build {build_hash:?} is up-to-date");
     NodeInputKind::UpToDate
-}
-
-fn mtime(path: &PathBuf) -> Result<SystemTime, NodeInputKind> {
-    let meta = path
-        .metadata()
-        .map_err(|e| NodeInputKind::CannotRead(path.to_owned(), e))?;
-    let mtime = meta
-        .modified()
-        .map_err(|e| NodeInputKind::CannotRead(path.to_owned(), e))?;
-    Ok(mtime)
 }
 
 #[tracing::instrument(skip_all)]
@@ -487,7 +481,7 @@ fn run_build(state: Arc<SharedState<'_>>, id: BuildId, report: mpsc::Sender<Buil
     let build_id = hash_build(build, graph);
     let input_hash = hash_input_set(id, graph);
 
-    let node_stat = stat_node(db, graph, build, build_id, input_hash);
+    let node_stat = stat_node(db, state.world, graph, build, build_id, input_hash);
 
     let result_kind = match node_stat {
         NodeInputKind::UpToDate => Ok(BuildStatusKind::UpToDate),
@@ -499,7 +493,7 @@ fn run_build(state: Arc<SharedState<'_>>, id: BuildId, report: mpsc::Sender<Buil
         }
         NodeInputKind::Outdated => {
             let cmd = &build.command;
-            let build_result = run_build_inner(state.user_state, cmd);
+            let build_result = state.world.execute(state.user_state, cmd);
             match &build_result {
                 Ok(BuildStatusKind::Succeeded) => {
                     write_build(db, graph, build, build_id, input_hash);
@@ -532,36 +526,4 @@ fn run_build(state: Arc<SharedState<'_>>, id: BuildId, report: mpsc::Sender<Buil
             result: result_kind,
         })
         .expect("Failed to send build result");
-}
-
-fn run_build_inner(
-    state: &dyn Any,
-    cmd: &crate::graph::BuildMethod,
-) -> Result<BuildStatusKind, std::io::Error> {
-    match cmd {
-        crate::graph::BuildMethod::SubCommand(build_cmd) => {
-            // FIXME: n2 reports that `Command::spawn` leaks file descriptors.
-            // Replace with a manual call to spawn instead.
-            // See: https://github.com/rust-lang/rust/issues/95584
-            let mut cmd = Command::new(&build_cmd.executable);
-            cmd.args(&build_cmd.args);
-
-            let mut child = cmd.spawn()?;
-            let output = child.wait()?;
-
-            if output.success() {
-                Ok(BuildStatusKind::Succeeded)
-            } else {
-                Ok(BuildStatusKind::Failed)
-            }
-        }
-        crate::graph::BuildMethod::Callback(_name, callback) => match callback(state) {
-            Ok(_) => Ok(BuildStatusKind::UpToDate),
-            Err(e) => {
-                eprintln!("Failed to execute build step {_name}: {e}");
-                Ok(BuildStatusKind::Failed)
-            }
-        },
-        crate::graph::BuildMethod::Phony => Ok(BuildStatusKind::Succeeded),
-    }
 }
