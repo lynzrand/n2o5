@@ -93,10 +93,22 @@ pub struct Executor<'a> {
 }
 
 impl<'a> Executor<'a> {
+    /// Create a new executor. Most use cases should use this.
     pub fn new(
         cfg: &'a ExecConfig,
         graph: &'a BuildGraph,
         db: Box<dyn ExecDb>,
+        user_state: &'a (dyn Any + Send + Sync),
+    ) -> Self {
+        Self::with_world(cfg, graph, db, &LOCAL_WORLD, user_state)
+    }
+
+    /// Create a new executor with a custom [`World`] implementation.
+    pub fn with_world(
+        cfg: &'a ExecConfig,
+        graph: &'a BuildGraph,
+        db: Box<dyn ExecDb>,
+        world: &'a dyn World,
         user_state: &'a (dyn Any + Send + Sync),
     ) -> Self {
         let pool = rayon::ThreadPoolBuilder::new()
@@ -108,7 +120,7 @@ impl<'a> Executor<'a> {
             cfg,
             graph,
             db,
-            world: &LOCAL_WORLD,
+            world,
             pool,
             user_state,
         };
