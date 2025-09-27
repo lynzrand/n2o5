@@ -8,6 +8,8 @@ use std::{
     time::SystemTime,
 };
 
+use indexmap::IndexSet;
+use petgraph::visit::Walker;
 use rayon::Scope;
 use tracing::{info, warn};
 
@@ -55,15 +57,18 @@ impl BuildStatusKind {
                 | BuildStatusKind::Skipped
         )
     }
+
+    fn is_successful(self) -> bool {
+        matches!(self, BuildStatusKind::UpToDate | BuildStatusKind::Succeeded)
+    }
 }
 
 #[derive(Debug, Clone)]
 struct BuildStatus {
     kind: BuildStatusKind,
-    n_inputs: usize,
-    /// The number of input nodes of this build that has
-    /// [finished](BuildStatusKind::is_finished).
-    n_inputs_finished: usize,
+    /// The number of input nodes of this build that has yet to
+    /// [finish successfully](BuildStatusKind::is_successful).
+    pending_inputs: usize,
 }
 
 /// Some internal shared state that is passed to each build task.
@@ -78,16 +83,42 @@ struct SharedState<'a> {
 }
 
 /// The executor that runs a build graph.
+///
+/// # The state machine
+///
+/// The executor tracks the state of each build node that needs to be executed.
+/// The following rules are used to initialize the state machine, assuming in
+/// the graph, edges point **from the consumer to the dependency**.
+///
+/// - Each node reachable from the nodes wanted by the user is tracked.
+/// - A node is initially in fresh state.
+/// - The number of pending inputs of each node is initialized to the out degree
+///   (i.e. the number of input nodes) of the node.
+///
+/// The following list of rules are used to drive the states forward:
+///
+/// - Any fresh node with 0 pending input nodes can be immediately scheduled to
+///   execute (might wait until the thread pool has some capacity).
+/// - Any newly successfully finished node (success or up-to-date) reduces the
+///   pending input count of all its consumer nodes by 1.
+/// - Any newly failed node (failed or skipped) will cause all its transitive
+///   consumer nodes to be marked as skipped.
+///
+/// The state machine should make progress until no more nodes can be started,
+/// in which case all nodes should have been finished (including success,
+/// up-to-date, failed, or skipped). Since except the starting nodes, all nodes
+/// will only start after all their dependencies have finished, progress can
+/// only be made after a node has finished.
 pub struct Executor<'a> {
     state: Arc<SharedState<'a>>,
 
     /// Nodes that can be immediately started
-    pending: VecDeque<BuildId>,
+    pending: IndexSet<BuildId>,
     /// The current status of each build node
     builds: HashMap<BuildId, BuildStatus>,
 
-    /// Number of nodes that has been started (including finished)
-    started: usize,
+    /// Number of nodes that is currently running
+    running: usize,
     /// Number of nodes already finished (including failed)
     finished: usize,
     /// Number of nodes that has failed
@@ -133,7 +164,7 @@ impl<'a> Executor<'a> {
 
             pending: Default::default(),
             builds: Default::default(),
-            started: 0,
+            running: 0,
             finished: 0,
             failed: 0,
 
@@ -172,7 +203,7 @@ impl<'a> Executor<'a> {
             }
             if children_count == 0 {
                 // This is a leaf node, add it to the starts
-                self.pending.push_back(build);
+                self.pending.insert(build);
             }
 
             // Initialize/reinit node, no difference either case.
@@ -180,22 +211,17 @@ impl<'a> Executor<'a> {
                 build,
                 BuildStatus {
                     kind: BuildStatusKind::Fresh,
-                    n_inputs: children_count,
-                    n_inputs_finished: 0,
+                    pending_inputs: children_count,
                 },
             );
             if let Some(original) = original {
                 match original.kind {
                     BuildStatusKind::Fresh => {}
-                    BuildStatusKind::Started => {
-                        self.started -= 1;
-                    }
+                    BuildStatusKind::Started => {}
                     BuildStatusKind::UpToDate | BuildStatusKind::Succeeded => {
-                        self.started -= 1;
                         self.finished -= 1;
                     }
                     BuildStatusKind::Failed | BuildStatusKind::Skipped => {
-                        self.started -= 1;
                         self.finished -= 1;
                         self.failed -= 1;
                     }
@@ -225,18 +251,18 @@ impl<'a> Executor<'a> {
 
         // Main run loop
         loop {
-            // While we can start more nodes, do so.
-            while let Some(val) = self.pending.pop_front() {
+            // Start all pending nodes
+            while let Some(val) = self.pending.pop() {
                 self.start_build(pool, tx.clone(), val);
             }
 
-            // Check if all that need to finish are finished
+            // If all nodes have finished, we are done
             if self.finished == self.builds.len() || self.failed > 0 {
                 break;
             }
 
             // Check if any nodes are still in progress
-            if self.started == self.finished {
+            if self.running == 0 {
                 panic!(
                     "No builds are in progress, but not all builds are finished. \
                     This is a bug."
@@ -248,17 +274,14 @@ impl<'a> Executor<'a> {
                 .recv()
                 .expect("We have a tx in hand, so rx should not close");
 
-            self.build_finished(msg, &tx)?;
+            // Process finished build
+            self.build_finished(msg)?;
         }
 
         Ok(())
     }
 
-    fn build_finished(
-        &mut self,
-        msg: BuildNodeResult,
-        tx: &mpsc::Sender<BuildNodeResult>,
-    ) -> Result<(), std::io::Error> {
+    fn build_finished(&mut self, msg: BuildNodeResult) -> Result<(), std::io::Error> {
         let id = msg.id;
         let stat = match msg.result {
             Ok(res) => res,
@@ -274,6 +297,7 @@ impl<'a> Executor<'a> {
             );
         }
 
+        self.running -= 1;
         self.finished += 1;
 
         let build = self.builds.get_mut(&msg.id).expect("Build should exist");
@@ -286,45 +310,43 @@ impl<'a> Executor<'a> {
         }
         build.kind = stat;
 
-        // Drive the state machine forward.
-        //
-        // - If a build is successful (succeeded or up-to-date), it
-        //   counts as a valid input of its dependent builds. This
-        //   increments the `n_inputs_finished` count of the dependent
-        //   builds.
-        //
-        //   If the number of finished inputs reaches the total number
-        //   of inputs, the dependent build can be started by spawning
-        //   a new task.
-        //
-        // - If a build fails, it is considered finished, but does not
-        //   count as a valid input. It will send `Skipped` to all
-        //   dependent builds, which will propagate the failure
-        //   downstream.
-        //
-        // - If a build is skipped, it propagates the skip to all
-        //   dependent builds.
         match stat {
             BuildStatusKind::Fresh => panic!("Build cannot be fresh after running"),
             BuildStatusKind::Started => panic!("Build cannot be started after running"),
             BuildStatusKind::Succeeded | BuildStatusKind::UpToDate => {
                 for node in self.state.graph.build_dependents(id) {
                     let dep = self.builds.get_mut(&node).expect("Build should exist");
-                    dep.n_inputs_finished += 1;
-                    if dep.n_inputs == dep.n_inputs_finished {
+                    if dep.kind.is_finished() {
+                        if dep.kind.is_successful() {
+                            panic!(
+                                "Build {:?} has already finished with status {:?}, cannot finish again with {:?}. This is a bug.",
+                                node, dep.kind, stat
+                            );
+                        } else {
+                            // Dep has already failed, do nothing
+                            continue;
+                        }
+                    }
+                    dep.pending_inputs -= 1;
+
+                    if dep.pending_inputs == 0 {
                         // All inputs finished, can start build
-                        self.pending.push_back(node);
+                        self.pending.insert(node);
                     }
                 }
             }
             BuildStatusKind::Failed | BuildStatusKind::Skipped => {
                 self.failed += 1;
-                for node in self.state.graph.build_dependents(id) {
-                    tx.send(BuildNodeResult {
-                        id: node,
-                        result: Ok(BuildStatusKind::Skipped),
-                    })
-                    .expect("Failed to send build result");
+                // Mark skipped for all transitive dependents
+                let dfs = petgraph::visit::Dfs::new(&self.state.graph.graph, id);
+                for node in dfs.iter(&self.state.graph.graph).skip(1) {
+                    let dep = self.builds.get_mut(&node).expect("Build should exist");
+                    if dep.kind.is_finished() {
+                        continue;
+                    }
+                    dep.kind = BuildStatusKind::Skipped;
+                    self.finished += 1;
+                    self.failed += 1;
                 }
             }
         }
@@ -342,6 +364,7 @@ impl<'a> Executor<'a> {
     {
         let state = self.state.clone();
         self.builds.get_mut(&node).expect("Build should exist").kind = BuildStatusKind::Started;
+        self.running += 1;
         pool.spawn(move |_p| run_build(state, node, tx));
     }
 }
