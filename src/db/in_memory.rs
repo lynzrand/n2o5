@@ -3,15 +3,34 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use crate::db::{BuildHash, BuildInfo, DbReader, ExecDb, FileInfo};
 
 use super::DbWriter;
 
+#[derive(Clone)]
 pub struct InMemoryDb {
-    inner: RwLock<DbInner>,
+    inner: Arc<RwLock<DbInner>>,
+}
+
+impl InMemoryDb {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(DbInner {
+                schema_version: 1,
+                build_info: HashMap::new(),
+                file_info: HashMap::new(),
+            })),
+        }
+    }
+}
+
+impl Default for InMemoryDb {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 struct DbInner {
