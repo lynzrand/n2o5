@@ -7,24 +7,16 @@ use n2o4::db::ExecDb;
 use n2o4::{
     db::in_memory::InMemoryDb,
     exec::{BuildStatusKind, ExecConfig, Executor},
-    graph::{BuildCommand, BuildMethod, BuildNode, GraphBuilder},
+    graph::BuildMethod,
 };
 
 use test_log::test;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::mock::{MockExecResult, MockWorld};
 
 mod mock;
-
-// Helper: SubCommand builder with a simple name to distinguish logs.
-fn sc(name: &str) -> BuildMethod {
-    BuildMethod::SubCommand(BuildCommand {
-        executable: PathBuf::from(name),
-        args: vec![],
-    })
-}
 
 // Helper: drain world log and return a vector of labels.
 fn drain_exec_labels(world: &MockWorld) -> Vec<String> {
@@ -39,14 +31,64 @@ fn drain_exec_labels(world: &MockWorld) -> Vec<String> {
         .collect()
 }
 
+macro_rules! mock_graph {
+    (
+        $(
+            // Rule name
+            $id:ident
+            // Rule , dependencies
+            $(, dep($($dep:ident),*$(,)?))? :
+            // Output files
+            $($out:expr),* =>
+            // Command
+            $cmd:ident
+            // Input files
+            ($($in:expr),*$(,)?)
+            ;
+        )*
+    ) => {
+        {
+            #[allow(unused)]
+            struct MockContext {
+                graph: n2o4::graph::BuildGraph,
+                $($id: n2o4::graph::BuildId,)*
+            }
+
+            let mut __gb = n2o4::graph::GraphBuilder::new();
+            $(
+                let __outs = vec![$(__gb.add_file($out)),*];
+                let __ins = vec![$(__gb.add_file($in)),*];
+                let __build = n2o4::graph::BuildNode {
+                    command: n2o4::graph::BuildMethod::SubCommand(n2o4::graph::BuildCommand {
+                        executable: std::path::PathBuf::from(stringify!($cmd)),
+                        args: vec![],
+                    }),
+                    ins: __ins,
+                    outs: __outs,
+                    restat: false,
+                };
+                let __build_id = __gb.add_build(__build);
+                let $id = __build_id;
+                $(
+                    $(
+                        __gb.add_build_dep(__build_id, $dep);
+                    )*
+                )?
+            )*
+            let graph = __gb.build().unwrap();
+            MockContext { graph, $($id,)* }
+        }
+    };
+}
+
 // 0) No-op run (no nodes); assert no errors
 #[test]
 fn test_nothing() {
     let cfg = ExecConfig::default();
-    let graph = n2o4::graph::BuildGraph::default();
+    let cx = mock_graph! {};
     let db = Box::new(InMemoryDb::default());
     let world = MockWorld::new();
-    let mut executor = Executor::with_world(&cfg, &graph, db, &world, &());
+    let mut executor = Executor::with_world(&cfg, &cx.graph, db, &world, &());
     executor.run().unwrap();
 }
 
@@ -54,16 +96,9 @@ fn test_nothing() {
 #[test]
 fn test_single_node_outdated_succeeded() {
     // Build graph: A(in.txt -> out.txt)
-    let mut gb = GraphBuilder::new();
-    let in_txt = gb.add_file("in.txt");
-    let out_txt = gb.add_file("out.txt");
-    let a = gb.add_build(BuildNode {
-        command: sc("A"),
-        ins: vec![in_txt],
-        outs: vec![out_txt],
-        restat: false,
-    });
-    let graph = gb.build().unwrap();
+    let cx = mock_graph! {
+        a: "out.txt" => A("in.txt");
+    };
 
     // World and DB
     let world = MockWorld::new();
@@ -74,8 +109,8 @@ fn test_single_node_outdated_succeeded() {
     let db_box: Box<dyn n2o4::db::ExecDb> = Box::new(db);
 
     let cfg = ExecConfig::default();
-    let mut exec = Executor::with_world(&cfg, &graph, db_box, &world, &());
-    exec.want([a]);
+    let mut exec = Executor::with_world(&cfg, &cx.graph, db_box, &world, &());
+    exec.want([cx.a]);
     exec.run().unwrap();
 
     let labels = drain_exec_labels(&world);
@@ -89,16 +124,9 @@ fn test_single_node_outdated_succeeded() {
 #[test]
 fn test_single_node_outdated_failed() {
     // Build graph: A(in.txt -> out.txt)
-    let mut gb = GraphBuilder::new();
-    let in_txt = gb.add_file("in.txt");
-    let out_txt = gb.add_file("out.txt");
-    let a = gb.add_build(BuildNode {
-        command: sc("A"),
-        ins: vec![in_txt],
-        outs: vec![out_txt],
-        restat: false,
-    });
-    let graph = gb.build().unwrap();
+    let cx = mock_graph! {
+        a: "out.txt" => A("in.txt");
+    };
 
     // World and DB
     let world = MockWorld::new();
@@ -117,8 +145,8 @@ fn test_single_node_outdated_failed() {
     let db_box: Box<dyn n2o4::db::ExecDb> = Box::new(db);
 
     let cfg = ExecConfig::default();
-    let mut exec = Executor::with_world(&cfg, &graph, db_box, &world, &());
-    exec.want([a]);
+    let mut exec = Executor::with_world(&cfg, &cx.graph, db_box, &world, &());
+    exec.want([cx.a]);
     exec.run().unwrap();
 
     let labels = drain_exec_labels(&world);
@@ -133,16 +161,9 @@ fn test_single_node_outdated_failed() {
 #[test]
 fn test_single_node_up_to_date() {
     // Build graph: A(in.txt -> out.txt)
-    let mut gb = GraphBuilder::new();
-    let in_txt = gb.add_file("in.txt");
-    let out_txt = gb.add_file("out.txt");
-    let a = gb.add_build(BuildNode {
-        command: sc("A"),
-        ins: vec![in_txt],
-        outs: vec![out_txt],
-        restat: false,
-    });
-    let graph = gb.build().unwrap();
+    let cx = mock_graph! {
+        a: "out.txt" => A("in.txt");
+    };
 
     let world = MockWorld::new();
     world.touch_file(Path::new("in.txt"));
@@ -154,8 +175,8 @@ fn test_single_node_up_to_date() {
     {
         let db_box: Box<dyn n2o4::db::ExecDb> = Box::new(db.clone());
         let cfg = ExecConfig::default();
-        let mut exec = Executor::with_world(&cfg, &graph, db_box, &world, &());
-        exec.want([a]);
+        let mut exec = Executor::with_world(&cfg, &cx.graph, db_box, &world, &());
+        exec.want([cx.a]);
         exec.run().unwrap();
         // Drain first-run log to isolate second-run behavior
         let _ = drain_exec_labels(&world);
@@ -165,8 +186,8 @@ fn test_single_node_up_to_date() {
     {
         let db_box: Box<dyn n2o4::db::ExecDb> = Box::new(db_read.clone());
         let cfg = ExecConfig::default();
-        let mut exec = Executor::with_world(&cfg, &graph, db_box, &world, &());
-        exec.want([a]);
+        let mut exec = Executor::with_world(&cfg, &cx.graph, db_box, &world, &());
+        exec.want([cx.a]);
         exec.run().unwrap();
         let labels = drain_exec_labels(&world);
         assert!(
@@ -181,33 +202,18 @@ fn test_single_node_up_to_date() {
     assert!(rd.get_file_info(Path::new("out.txt")).is_some());
 }
 
-// 4) Linear dependency: A -> B success path
+// 4) Linear , dependency: A -> B success path
 #[test]
 fn test_linear_dependency_success() {
-    // A(a.in -> a.out), B(a.out -> b.out), with edge B depends on A
-    let mut gb = GraphBuilder::new();
-    let a_in = gb.add_file("a.in");
-    let a_out = gb.add_file("a.out");
-    let b_out = gb.add_file("b.out");
-
-    let a = gb.add_build(BuildNode {
-        command: sc("A"),
-        ins: vec![a_in],
-        outs: vec![a_out],
-        restat: false,
-    });
-    let b = gb.add_build(BuildNode {
-        command: sc("B"),
-        ins: vec![a_out],
-        outs: vec![b_out],
-        restat: false,
-    });
-    gb.add_build_dep(b, a);
-    let graph = gb.build().unwrap();
+    // A(a.in -> a.out), B(a.out -> b.out), with edge B , depends on A
+    let cx = mock_graph! {
+        a: "a.out" => A("a.in");
+        b, dep(a): "b.out" => B("a.out");
+    };
 
     let world = MockWorld::new();
     world.touch_file(Path::new("a.in"));
-    // Ensure dependent input exists so B won't be Missing when scheduled
+    // Ensure , dependent input exists so B won't be Missing when scheduled
     world.touch_file(Path::new("a.out"));
 
     let db = InMemoryDb::default();
@@ -215,8 +221,8 @@ fn test_linear_dependency_success() {
     let db_box: Box<dyn n2o4::db::ExecDb> = Box::new(db);
 
     let cfg = ExecConfig::default();
-    let mut exec = Executor::with_world(&cfg, &graph, db_box, &world, &());
-    exec.want([b]); // Want B should pull in A via dependency
+    let mut exec = Executor::with_world(&cfg, &cx.graph, db_box, &world, &());
+    exec.want([cx.b]); // Want B should pull in A via , dependency
     exec.run().unwrap();
 
     let labels = drain_exec_labels(&world);
@@ -231,26 +237,11 @@ fn test_linear_dependency_success() {
 // 5) Failure propagation: A Failed -> B Skipped (B not executed)
 #[test]
 fn test_dependency_failure_propagation_skipped() {
-    // A(a.in -> a.out), B(a.out -> b.out), B depends on A
-    let mut gb = GraphBuilder::new();
-    let a_in = gb.add_file("a.in");
-    let a_out = gb.add_file("a.out");
-    let b_out = gb.add_file("b.out");
-
-    let a = gb.add_build(BuildNode {
-        command: sc("A"),
-        ins: vec![a_in],
-        outs: vec![a_out],
-        restat: false,
-    });
-    let b = gb.add_build(BuildNode {
-        command: sc("B"),
-        ins: vec![a_out],
-        outs: vec![b_out],
-        restat: false,
-    });
-    gb.add_build_dep(b, a);
-    let graph = gb.build().unwrap();
+    // A(a.in -> a.out), B(a.out -> b.out), B , depends on A
+    let cx = mock_graph! {
+        a: "a.out" => A("a.in");
+        b, dep(a): "b.out" => B("a.out");
+    };
 
     let world = MockWorld::new();
     world.touch_file(Path::new("a.in"));
@@ -268,8 +259,8 @@ fn test_dependency_failure_propagation_skipped() {
     let db_box: Box<dyn n2o4::db::ExecDb> = Box::new(db);
 
     let cfg = ExecConfig::default();
-    let mut exec = Executor::with_world(&cfg, &graph, db_box, &world, &());
-    exec.want([b]);
+    let mut exec = Executor::with_world(&cfg, &cx.graph, db_box, &world, &());
+    exec.want([cx.b]);
     exec.run().unwrap();
 
     let labels = drain_exec_labels(&world);
@@ -286,39 +277,16 @@ fn test_dependency_failure_propagation_skipped() {
 #[test]
 fn test_multi_input_gatekeeping() {
     // A(a.in -> a.out), C(c.in -> c.out), B([a.out, c.out] -> b.out)
-    let mut gb = GraphBuilder::new();
-    let a_in = gb.add_file("a.in");
-    let a_out = gb.add_file("a.out");
-    let c_in = gb.add_file("c.in");
-    let c_out = gb.add_file("c.out");
-    let b_out = gb.add_file("b.out");
-
-    let a = gb.add_build(BuildNode {
-        command: sc("A"),
-        ins: vec![a_in],
-        outs: vec![a_out],
-        restat: false,
-    });
-    let c = gb.add_build(BuildNode {
-        command: sc("C"),
-        ins: vec![c_in],
-        outs: vec![c_out],
-        restat: false,
-    });
-    let b = gb.add_build(BuildNode {
-        command: sc("B"),
-        ins: vec![a_out, c_out],
-        outs: vec![b_out],
-        restat: false,
-    });
-    gb.add_build_dep(b, a);
-    gb.add_build_dep(b, c);
-    let graph = gb.build().unwrap();
+    let cx = mock_graph! {
+        a: "a.out" => A("a.in");
+        c: "c.out" => C("c.in");
+        b, dep(a, c): "b.out" => B("a.out", "c.out");
+    };
 
     let world = MockWorld::new();
     world.touch_file(Path::new("a.in"));
     world.touch_file(Path::new("c.in"));
-    // Ensure dependent inputs exist so B won't be Missing when scheduled
+    // Ensure , dependent inputs exist so B won't be Missing when scheduled
     world.touch_file(Path::new("a.out"));
     world.touch_file(Path::new("c.out"));
 
@@ -327,8 +295,8 @@ fn test_multi_input_gatekeeping() {
     let db_box: Box<dyn n2o4::db::ExecDb> = Box::new(db);
 
     let cfg = ExecConfig::default();
-    let mut exec = Executor::with_world(&cfg, &graph, db_box, &world, &());
-    exec.want([b]);
+    let mut exec = Executor::with_world(&cfg, &cx.graph, db_box, &world, &());
+    exec.want([cx.b]);
     exec.run().unwrap();
 
     let labels = drain_exec_labels(&world);
@@ -341,38 +309,15 @@ fn test_multi_input_gatekeeping() {
     assert!(rd.get_file_info(Path::new("b.out")).is_some());
 }
 
-// 7) Skipped chain propagation: A Failed -> B Skipped -> C Skipped (B depends on A, C depends on B)
+// 7) Skipped chain propagation: A Failed -> B Skipped -> C Skipped (B , depends on A, C , depends on B)
 #[test]
 fn test_skipped_chain_propagation() {
     // A(a.in -> a.out) -> B(a.out -> b.out) -> C(b.out -> c.out)
-    let mut gb = GraphBuilder::new();
-    let a_in = gb.add_file("a.in");
-    let a_out = gb.add_file("a.out");
-    let b_out = gb.add_file("b.out");
-    let c_out = gb.add_file("c.out");
-
-    let a = gb.add_build(BuildNode {
-        command: sc("A"),
-        ins: vec![a_in],
-        outs: vec![a_out],
-        restat: false,
-    });
-    let b = gb.add_build(BuildNode {
-        command: sc("B"),
-        ins: vec![a_out],
-        outs: vec![b_out],
-        restat: false,
-    });
-    let c = gb.add_build(BuildNode {
-        command: sc("C"),
-        ins: vec![b_out],
-        outs: vec![c_out],
-        restat: false,
-    });
-
-    gb.add_build_dep(b, a);
-    gb.add_build_dep(c, b);
-    let graph = gb.build().unwrap();
+    let cx = mock_graph! {
+        a: "a.out" => A("a.in");
+        b, dep(a): "b.out" => B("a.out");
+        c, dep(b): "c.out" => C("b.out");
+    };
 
     let world = MockWorld::new();
     world.touch_file(Path::new("a.in"));
@@ -390,8 +335,8 @@ fn test_skipped_chain_propagation() {
     let db_box: Box<dyn n2o4::db::ExecDb> = Box::new(db);
 
     let cfg = ExecConfig::default();
-    let mut exec = Executor::with_world(&cfg, &graph, db_box, &world, &());
-    exec.want([c]); // Want C pulls in B and A
+    let mut exec = Executor::with_world(&cfg, &cx.graph, db_box, &world, &());
+    exec.want([cx.c]); // Want C pulls in B and A
     exec.run().unwrap();
 
     let labels = drain_exec_labels(&world);
@@ -408,25 +353,10 @@ fn test_skipped_chain_propagation() {
 #[test]
 fn test_parallelism_one_two_leaves() {
     // D(d.in -> d.out), E(e.in -> e.out) 无依赖
-    let mut gb = GraphBuilder::new();
-    let d_in = gb.add_file("d.in");
-    let d_out = gb.add_file("d.out");
-    let e_in = gb.add_file("e.in");
-    let e_out = gb.add_file("e.out");
-
-    let d = gb.add_build(BuildNode {
-        command: sc("D"),
-        ins: vec![d_in],
-        outs: vec![d_out],
-        restat: false,
-    });
-    let e = gb.add_build(BuildNode {
-        command: sc("E"),
-        ins: vec![e_in],
-        outs: vec![e_out],
-        restat: false,
-    });
-    let graph = gb.build().unwrap();
+    let cx = mock_graph! {
+        d: "d.out" => D("d.in");
+        e: "e.out" => E("e.in");
+    };
 
     let world = MockWorld::new();
     world.touch_file(Path::new("d.in"));
@@ -437,8 +367,8 @@ fn test_parallelism_one_two_leaves() {
 
     let cfg = ExecConfig { parallelism: 1 };
 
-    let mut exec = Executor::with_world(&cfg, &graph, db_box, &world, &());
-    exec.want([d, e]);
+    let mut exec = Executor::with_world(&cfg, &cx.graph, db_box, &world, &());
+    exec.want([cx.d, cx.e]);
     exec.run().unwrap();
 
     let labels = drain_exec_labels(&world);
