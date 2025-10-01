@@ -86,6 +86,24 @@ fn assert_log_include(log: &[String], expected: &[&str]) {
     }
 }
 
+fn assert_order(log: &[String], before: &str, after: &str) {
+    let b = log
+        .iter()
+        .position(|l| l == before)
+        .unwrap_or_else(|| panic!("Expected '{}' in log {:?}", before, log));
+    let a = log
+        .iter()
+        .position(|l| l == after)
+        .unwrap_or_else(|| panic!("Expected '{}' in log {:?}", after, log));
+    assert!(
+        b < a,
+        "Expected '{}' to execute before '{}'. Got {:?}",
+        before,
+        after,
+        log
+    );
+}
+
 macro_rules! mock_graph {
     (
         $(
@@ -228,7 +246,7 @@ fn test_linear_dependency_success() {
     let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.b]);
 
     assert_eq!(log.len(), 2);
-    assert_log_include(&log, &["A", "B"]);
+    assert_order(&log, "A", "B");
 
     assert_db_has(&db_read, "b.out");
 }
@@ -270,7 +288,8 @@ fn test_multi_input_gatekeeping() {
 
     let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.b]);
     assert_eq!(log.len(), 3);
-    assert_log_include(&log, &["A", "C", "B"]);
+    assert_order(&log, "A", "B");
+    assert_order(&log, "C", "B");
 
     assert_db_has(&db_read, "b.out");
 }
