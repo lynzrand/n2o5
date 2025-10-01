@@ -340,3 +340,22 @@ fn test_parallelism_one_two_leaves() {
     assert_eq!(log.len(), 2);
     assert_log_include(&log, &["D", "E"]);
 }
+
+#[test]
+fn test_failure_midway_propagation() {
+    let cx = mock_graph! {
+        a: "a.out" => A("a.in");
+        b, dep(a): "b.out" => B("a.out");
+        c, dep(b): "c.out" => C("b.out");
+    };
+
+    let world = MockWorld::new();
+    touch_all(&world, &["a.in"]);
+    set_fail_on(&world, "B");
+
+    let (db_read, db_box) = declare_db();
+
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.c]);
+    assert_eq!(log, vec!["A", "B"]);
+    assert_db_has(&db_read, "a.out");
+}
