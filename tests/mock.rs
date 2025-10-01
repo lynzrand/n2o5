@@ -23,7 +23,8 @@ pub type MockCallback =
     Box<dyn Fn(&dyn Any, &BuildMethod) -> std::io::Result<BuildStatusKind> + Send + Sync>;
 
 struct MockWorldInner {
-    /// A number that increase with each setting
+    /// A number that roughly represent a mocked system time. Increases every
+    /// time a file is touched.
     epoch: u64,
     /// Map from in-memory file list to their modification epoch
     files: HashMap<PathBuf, u64>,
@@ -81,6 +82,7 @@ impl World for MockWorld {
     }
 }
 
+#[allow(unused)]
 impl MockWorld {
     pub fn new() -> Self {
         Self {

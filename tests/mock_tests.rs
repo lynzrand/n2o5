@@ -1,4 +1,9 @@
-use n2o4::db::{DbReader, ExecDb};
+//! A number of minimal mocking tests for the basic functionality of the executor.
+//!
+//! Most of these tests are written by an LLM. They are very small tests, so
+//! it's acceptable.
+
+use n2o4::db::ExecDb;
 use n2o4::{
     db::in_memory::InMemoryDb,
     exec::{BuildStatusKind, ExecConfig, Executor},
@@ -34,7 +39,7 @@ fn drain_exec_labels(world: &MockWorld) -> Vec<String> {
         .collect()
 }
 
-// Keep the original smoke test for an empty graph.
+// 0) No-op run (no nodes); assert no errors
 #[test]
 fn test_nothing() {
     let cfg = ExecConfig::default();
@@ -250,10 +255,10 @@ fn test_dependency_failure_propagation_skipped() {
     let world = MockWorld::new();
     world.touch_file(Path::new("a.in"));
     world.set_callback(Box::new(|_, method| {
-        if let BuildMethod::SubCommand(cmd) = method {
-            if cmd.executable == Path::new("A") {
-                return Ok(BuildStatusKind::Failed);
-            }
+        if let BuildMethod::SubCommand(cmd) = method
+            && cmd.executable == Path::new("A")
+        {
+            return Ok(BuildStatusKind::Failed);
         }
         Ok(BuildStatusKind::Succeeded)
     }));
@@ -372,10 +377,10 @@ fn test_skipped_chain_propagation() {
     let world = MockWorld::new();
     world.touch_file(Path::new("a.in"));
     world.set_callback(Box::new(|_, method| {
-        if let BuildMethod::SubCommand(cmd) = method {
-            if cmd.executable == Path::new("A") {
-                return Ok(BuildStatusKind::Failed);
-            }
+        if let BuildMethod::SubCommand(cmd) = method
+            && cmd.executable == Path::new("A")
+        {
+            return Ok(BuildStatusKind::Failed);
         }
         Ok(BuildStatusKind::Succeeded)
     }));
@@ -430,8 +435,7 @@ fn test_parallelism_one_two_leaves() {
     let db = InMemoryDb::default();
     let db_box: Box<dyn n2o4::db::ExecDb> = Box::new(db);
 
-    let mut cfg = ExecConfig::default();
-    cfg.parallelism = 1;
+    let cfg = ExecConfig { parallelism: 1 };
 
     let mut exec = Executor::with_world(&cfg, &graph, db_box, &world, &());
     exec.want([d, e]);
