@@ -21,3 +21,6 @@ members = [".", "cli"]
 
 [workspace.dependencies]
 n2o4 = { path = "." }
+
+[dev-dependencies]
+test-log = { version = "0.2.18", features = ["trace"] }

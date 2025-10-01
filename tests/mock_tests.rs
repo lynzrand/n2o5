@@ -5,6 +5,8 @@ use n2o4::{
     graph::{BuildCommand, BuildMethod, BuildNode, GraphBuilder},
 };
 
+use test_log::test;
+
 use std::path::{Path, PathBuf};
 
 use crate::mock::{MockExecResult, MockWorld};

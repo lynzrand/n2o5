@@ -4,6 +4,7 @@ pub mod in_memory;
 pub mod redb;
 
 use std::{
+    fmt::Debug,
     path::{Path, PathBuf},
     time::SystemTime,
 };
@@ -13,16 +14,38 @@ use serde::{Deserialize, Serialize};
 /// A hash that uniquely identifies a build command.
 ///
 /// Generate one with [`crate::graph::hash_build`].
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct BuildHash(#[serde(with = "serde_bytes")] pub [u8; 16]);
+
+impl Debug for BuildHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BuildHash(")?;
+        for byte in &self.0 {
+            write!(f, "{:02x}", byte)?;
+        }
+        write!(f, ")")?;
+        Ok(())
+    }
+}
 
 /// A hash of a build's input environments.
 ///
 /// Generate one with [`crate::graph::hash_input_set`].
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct InputHash(#[serde(with = "serde_bytes")] pub [u8; 16]);
+
+impl Debug for InputHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "InputHash(")?;
+        for byte in &self.0 {
+            write!(f, "{:02x}", byte)?;
+        }
+        write!(f, ")")?;
+        Ok(())
+    }
+}
 
 /// The information associated with a specific file in the DB
 #[derive(Serialize, Deserialize, Debug, Clone)]

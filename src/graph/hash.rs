@@ -82,7 +82,7 @@ struct Acc {
 
 impl Acc {
     fn accumulate(&mut self, h: u128) {
-        self.sum += h;
+        self.sum = self.sum.wrapping_add(h);
         self.xor ^= h;
         self.cnt += 1;
     }
