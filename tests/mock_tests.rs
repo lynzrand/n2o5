@@ -102,7 +102,7 @@ fn test_single_node_outdated_succeeded() {
 
     // World and DB
     let world = MockWorld::new();
-    world.touch_file(Path::new("in.txt")); // ensure input exists
+    world.touch_file("in.txt"); // ensure input exists
 
     let db = InMemoryDb::default();
     let db_read = db.clone();
@@ -117,7 +117,7 @@ fn test_single_node_outdated_succeeded() {
     assert_eq!(labels, vec!["A"]);
 
     let rd = db_read.begin_read();
-    assert!(rd.get_file_info(Path::new("out.txt")).is_some());
+    assert!(rd.get_file_info("out.txt".as_ref()).is_some());
 }
 
 // 2) Single node: Outdated -> Failed; assert exec log and file info invalidated
@@ -130,7 +130,7 @@ fn test_single_node_outdated_failed() {
 
     // World and DB
     let world = MockWorld::new();
-    world.touch_file(Path::new("in.txt"));
+    world.touch_file("in.txt");
     world.set_callback(Box::new(|_, method| {
         if let BuildMethod::SubCommand(cmd) = method
             && cmd.executable == Path::new("A")
@@ -154,7 +154,7 @@ fn test_single_node_outdated_failed() {
 
     let rd = db_read.begin_read();
     // Failed build should invalidate/avoid any file info for the output
-    assert!(rd.get_file_info(Path::new("out.txt")).is_none());
+    assert!(rd.get_file_info("out.txt".as_ref()).is_none());
 }
 
 // 3) Single node: UpToDate on second run (no execution)
@@ -166,7 +166,7 @@ fn test_single_node_up_to_date() {
     };
 
     let world = MockWorld::new();
-    world.touch_file(Path::new("in.txt"));
+    world.touch_file("in.txt");
 
     let db = InMemoryDb::default();
     let db_read = db.clone();
@@ -199,7 +199,7 @@ fn test_single_node_up_to_date() {
 
     // File info should still exist
     let rd = db_read.begin_read();
-    assert!(rd.get_file_info(Path::new("out.txt")).is_some());
+    assert!(rd.get_file_info("out.txt".as_ref()).is_some());
 }
 
 // 4) Linear , dependency: A -> B success path
@@ -212,9 +212,9 @@ fn test_linear_dependency_success() {
     };
 
     let world = MockWorld::new();
-    world.touch_file(Path::new("a.in"));
+    world.touch_file("a.in");
     // Ensure , dependent input exists so B won't be Missing when scheduled
-    world.touch_file(Path::new("a.out"));
+    world.touch_file("a.out");
 
     let db = InMemoryDb::default();
     let db_read = db.clone();
@@ -231,7 +231,7 @@ fn test_linear_dependency_success() {
     assert!(labels.contains(&"B".to_string()));
 
     let rd = db_read.begin_read();
-    assert!(rd.get_file_info(Path::new("b.out")).is_some());
+    assert!(rd.get_file_info("b.out".as_ref()).is_some());
 }
 
 // 5) Failure propagation: A Failed -> B Skipped (B not executed)
@@ -244,7 +244,7 @@ fn test_dependency_failure_propagation_skipped() {
     };
 
     let world = MockWorld::new();
-    world.touch_file(Path::new("a.in"));
+    world.touch_file("a.in");
     world.set_callback(Box::new(|_, method| {
         if let BuildMethod::SubCommand(cmd) = method
             && cmd.executable == Path::new("A")
@@ -269,8 +269,8 @@ fn test_dependency_failure_propagation_skipped() {
 
     let rd = db_read.begin_read();
     // Neither A nor B should have output info (A failed -> invalidated; B skipped)
-    assert!(rd.get_file_info(Path::new("a.out")).is_none());
-    assert!(rd.get_file_info(Path::new("b.out")).is_none());
+    assert!(rd.get_file_info("a.out".as_ref()).is_none());
+    assert!(rd.get_file_info("b.out".as_ref()).is_none());
 }
 
 // 6) Multiple inputs gate: B executes only after A and C succeed
@@ -284,11 +284,11 @@ fn test_multi_input_gatekeeping() {
     };
 
     let world = MockWorld::new();
-    world.touch_file(Path::new("a.in"));
-    world.touch_file(Path::new("c.in"));
+    world.touch_file("a.in");
+    world.touch_file("c.in");
     // Ensure , dependent inputs exist so B won't be Missing when scheduled
-    world.touch_file(Path::new("a.out"));
-    world.touch_file(Path::new("c.out"));
+    world.touch_file("a.out");
+    world.touch_file("c.out");
 
     let db = InMemoryDb::default();
     let db_read = db.clone();
@@ -306,7 +306,7 @@ fn test_multi_input_gatekeeping() {
     assert!(labels.contains(&"B".to_string()));
 
     let rd = db_read.begin_read();
-    assert!(rd.get_file_info(Path::new("b.out")).is_some());
+    assert!(rd.get_file_info("b.out".as_ref()).is_some());
 }
 
 // 7) Skipped chain propagation: A Failed -> B Skipped -> C Skipped (B , depends on A, C , depends on B)
@@ -320,7 +320,7 @@ fn test_skipped_chain_propagation() {
     };
 
     let world = MockWorld::new();
-    world.touch_file(Path::new("a.in"));
+    world.touch_file("a.in");
     world.set_callback(Box::new(|_, method| {
         if let BuildMethod::SubCommand(cmd) = method
             && cmd.executable == Path::new("A")
@@ -344,9 +344,9 @@ fn test_skipped_chain_propagation() {
     assert_eq!(labels, vec!["A"]);
 
     let rd = db_read.begin_read();
-    assert!(rd.get_file_info(Path::new("a.out")).is_none());
-    assert!(rd.get_file_info(Path::new("b.out")).is_none());
-    assert!(rd.get_file_info(Path::new("c.out")).is_none());
+    assert!(rd.get_file_info("a.out".as_ref()).is_none());
+    assert!(rd.get_file_info("b.out".as_ref()).is_none());
+    assert!(rd.get_file_info("c.out".as_ref()).is_none());
 }
 
 // 8) Optional: parallelism=1 with two leaves; sequential execution (no strict order asserted)
@@ -359,8 +359,8 @@ fn test_parallelism_one_two_leaves() {
     };
 
     let world = MockWorld::new();
-    world.touch_file(Path::new("d.in"));
-    world.touch_file(Path::new("e.in"));
+    world.touch_file("d.in");
+    world.touch_file("e.in");
 
     let db = InMemoryDb::default();
     let db_box: Box<dyn n2o4::db::ExecDb> = Box::new(db);

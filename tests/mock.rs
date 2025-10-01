@@ -96,21 +96,21 @@ impl MockWorld {
     }
 
     /// Set a file as existing, updating its modification time to the current epoch.
-    pub fn touch_file(&self, path: &Path) {
+    pub fn touch_file(&self, path: impl AsRef<Path>) {
         let mut inner = self.inner.lock().unwrap();
         inner.epoch += 1;
         let epoch = inner.epoch;
-        if let Some(file_epoch) = inner.files.get_mut(path) {
+        if let Some(file_epoch) = inner.files.get_mut(path.as_ref()) {
             *file_epoch = epoch;
         } else {
-            inner.files.insert(path.to_owned(), epoch);
+            inner.files.insert(path.as_ref().to_owned(), epoch);
         }
     }
 
     /// Remove a file from the mock world.
-    pub fn remove_file(&self, path: &std::path::Path) {
+    pub fn remove_file(&self, path: impl AsRef<Path>) {
         let mut inner = self.inner.lock().unwrap();
-        inner.files.remove(path);
+        inner.files.remove(path.as_ref());
     }
 
     /// Take and clear the execution log.
