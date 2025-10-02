@@ -238,18 +238,27 @@ impl<'a> Executor<'a> {
         self.build_started = true;
 
         let state = self.state.clone();
-        state.pool.in_place_scope(|pool| self.run_inner(pool))?;
+        let (tx, mut rx) = mpsc::channel::<BuildNodeResult>();
+        state
+            .pool
+            .in_place_scope(|pool| self.run_inner(pool, tx, &mut rx))?;
+        // Gracefully retain the receiver until all senders are dropped, so that
+        // threads in the pool can finish sending messages.
+        // TODO: collect and process any remaining messages
+        drop(rx);
 
         Ok(())
     }
 
-    fn run_inner<'scope>(&mut self, pool: &Scope<'scope>) -> Result<(), std::io::Error>
+    fn run_inner<'scope>(
+        &mut self,
+        pool: &Scope<'scope>,
+        tx: mpsc::Sender<BuildNodeResult>,
+        rx: &mut mpsc::Receiver<BuildNodeResult>,
+    ) -> Result<(), std::io::Error>
     where
         'a: 'scope,
     {
-        // TODO: should we prevent it from running more than once?
-        let (tx, rx) = mpsc::channel::<BuildNodeResult>();
-
         // Main run loop
         loop {
             debug!(
