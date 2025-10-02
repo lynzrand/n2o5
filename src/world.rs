@@ -2,7 +2,7 @@ use std::{any::Any, path::Path, process::Command, time::SystemTime};
 
 use crate::{
     exec::BuildStatusKind,
-    graph::{BuildGraph, BuildId, BuildMethod},
+    graph::{BuildGraph, BuildId},
 };
 
 /// A trait that abstracts over how the executor interacts with the outside world.

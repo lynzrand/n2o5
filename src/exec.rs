@@ -72,6 +72,7 @@ struct BuildStatus {
 
 /// Some internal shared state that is passed to each build task.
 struct SharedState<'a> {
+    #[allow(unused)] // might be used later
     cfg: &'a ExecConfig,
     graph: &'a BuildGraph,
     world: &'a dyn World,
