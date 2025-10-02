@@ -176,7 +176,7 @@ pub struct BuildNode {
     pub command: BuildMethod,
     pub ins: Vec<FileId>,
     pub outs: Vec<FileId>,
-    pub restat: bool,
+    // pub restat: bool,
 }
 
 /// A callback to invoke as a build step.
