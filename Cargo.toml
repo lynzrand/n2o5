@@ -3,6 +3,8 @@ name = "n2o4"
 version = "0.1.0"
 edition = "2024"
 
+rust-version = "1.89"
+
 [dependencies]
 indexmap = "2.11.1"
 petgraph = "0.8.2"
