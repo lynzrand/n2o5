@@ -359,3 +359,182 @@ fn test_failure_midway_propagation() {
     assert_eq!(log, vec!["A", "B"]);
     assert_db_has(&db_read, "a.out");
 }
+
+#[test]
+fn test_up_to_date() {
+    let cx = mock_graph! {
+        a: "a.out" => A("a.in");
+        b, dep(a): "b.out" => B("a.out");
+    };
+
+    let world = MockWorld::new();
+    touch_all(&world, &["a.in"]);
+
+    let (db_read, db_box) = declare_db();
+
+    // First run to populate DB
+    let _ = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.b]);
+
+    // Second run should be UpToDate and not execute the command
+    let db_box2: Box<dyn n2o4::db::ExecDb> = Box::new(db_read.clone());
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box2, [cx.b]);
+    assert!(
+        log.is_empty(),
+        "Expected no execution on UpToDate, got {:?}",
+        log
+    );
+
+    // File info should still exist
+    assert_db_has(&db_read, "b.out");
+}
+
+fn set_fail_on_any(world: &MockWorld, exec_names: &[&str]) {
+    let names: Vec<String> = exec_names.iter().map(|s| s.to_string()).collect();
+    world.set_callback(Box::new(move |_, method| {
+        if let BuildMethod::SubCommand(cmd) = method
+            && names.iter().any(|n| cmd.executable == Path::new(n))
+        {
+            return Ok(BuildStatusKind::Failed);
+        }
+        Ok(BuildStatusKind::Succeeded)
+    }));
+}
+
+#[test]
+fn test_two_dependency_failures_skip_consumer() {
+    let cx = mock_graph! {
+        a: "a.out" => A("a.in");
+        b: "b.out" => B("b.in");
+        c, dep(a, b): "c.out" => C("a.out", "b.out");
+    };
+
+    let world = MockWorld::new();
+    touch_all(&world, &["a.in", "b.in"]);
+    set_fail_on_any(&world, &["A", "B"]);
+
+    let (db_read, db_box) = declare_db();
+
+    // Both A and B should have failed, C skipped
+    // No error should be raised
+    let _log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.c]);
+
+    assert_db_missing(&db_read, "a.out");
+    assert_db_missing(&db_read, "b.out");
+    assert_db_missing(&db_read, "c.out");
+}
+
+#[test]
+fn test_touch_input_after_first_build_triggers_rebuild() {
+    let cx = mock_graph! {
+        a: "out.txt" => A("in.txt");
+    };
+
+    let world = MockWorld::new();
+    touch_all(&world, &["in.txt"]);
+
+    let (db_read, db_box) = declare_db();
+
+    // First run to populate DB
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.a]);
+    assert_db_has(&db_read, "out.txt");
+    assert_eq!(log, vec!["A"]);
+
+    // Touch input after the first build
+    world.touch_file("in.txt");
+
+    // Second run should rebuild due to input mtime > last_start
+    let db_box2: Box<dyn n2o4::db::ExecDb> = Box::new(db_read.clone());
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box2, [cx.a]);
+    assert_eq!(log, vec!["A"]);
+
+    // File info should still exist
+    assert_db_has(&db_read, "out.txt");
+}
+
+#[test]
+fn test_change_command_then_change_back_reuses_same_db() {
+    // Initial build with A
+    let cx1 = mock_graph! {
+        a: "out.txt" => A("in.txt");
+    };
+
+    let world = MockWorld::new();
+    touch_all(&world, &["in.txt"]);
+
+    let (db_read, db_box) = declare_db();
+    let _ = run_graph(&world, &cx1.graph, ExecConfig::default(), db_box, [cx1.a]);
+
+    // Change command to X, same inputs/outputs, reuse the same DB
+    let cx2 = mock_graph! {
+        a: "out.txt" => X("in.txt");
+    };
+    let db_box2: Box<dyn n2o4::db::ExecDb> = Box::new(db_read.clone());
+    let log2 = run_graph(&world, &cx2.graph, ExecConfig::default(), db_box2, [cx2.a]);
+    assert_eq!(log2, vec!["X"]);
+    assert_db_has(&db_read, "out.txt");
+
+    // Change command back to A and build again with the same DB
+    let cx3 = mock_graph! {
+        a: "out.txt" => A("in.txt");
+    };
+    let db_box3: Box<dyn n2o4::db::ExecDb> = Box::new(db_read.clone());
+    let log3 = run_graph(&world, &cx3.graph, ExecConfig::default(), db_box3, [cx3.a]);
+    assert_eq!(log3, vec!["A"]);
+    assert_db_has(&db_read, "out.txt");
+
+    // Another build with A should be UpToDate (no execution)
+    let cx4 = mock_graph! {
+        a: "out.txt" => A("in.txt");
+    };
+    let db_box4: Box<dyn n2o4::db::ExecDb> = Box::new(db_read.clone());
+    let log4 = run_graph(&world, &cx4.graph, ExecConfig::default(), db_box4, [cx3.a]);
+    assert_eq!(log4.len(), 0);
+    assert_db_has(&db_read, "out.txt");
+}
+
+#[test]
+fn test_remove_output_file_after_successful_build() {
+    let cx = mock_graph! {
+        a: "out.txt" => A("in.txt");
+    };
+
+    let world = MockWorld::new();
+    touch_all(&world, &["in.txt"]);
+
+    let (db_read, db_box) = declare_db();
+
+    // First run to populate DB
+    let _ = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.a]);
+    assert_db_has(&db_read, "out.txt");
+
+    // Simulate removing the output file from the world
+    world.remove_file("out.txt");
+
+    let db_box2: Box<dyn n2o4::db::ExecDb> = Box::new(db_read.clone());
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box2, [cx.a]);
+    // Command should re-execute to regenerate the missing output
+    assert_eq!(log, vec!["A"]);
+
+    // DB still tracks the file info
+    assert_db_has(&db_read, "out.txt");
+}
+
+#[test]
+fn test_nonexisting_input_file_fails_without_execution() {
+    let cx = mock_graph! {
+        a: "out.txt" => A("missing.in");
+    };
+
+    let world = MockWorld::new();
+
+    let (db_read, db_box) = declare_db();
+
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.a]);
+    assert!(
+        log.is_empty(),
+        "Expected no execution when input file is missing, got {:?}",
+        log
+    );
+
+    assert_db_missing(&db_read, "out.txt");
+}
