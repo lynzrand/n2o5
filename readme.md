@@ -3,6 +3,8 @@
 > Under heavy construction. Not usable now.
 > Expect hiccups and unfinished parts.
 
+[![CI](https://github.com/lynzrand/n2o4/actions/workflows/ci.yml/badge.svg)](https://github.com/lynzrand/n2o4/actions/workflows/ci.yml)
+
 A build system as library.
 
 N2O4 is an idea grew out of fiddling [n2](https://github.com/evmar/n2).

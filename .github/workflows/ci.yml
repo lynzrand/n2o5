@@ -1,0 +1,42 @@
+name: CI
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: ['**']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: read-all
+
+jobs:
+  test:
+    name: Test (1.89)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust (1.89)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.89'
+          components: clippy
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: 'workspace'
+          workspaces: |
+            . -> target
+            cli -> target
+      - name: Show versions
+        run: |
+          rustc -Vv
+          cargo -V
+      - name: Build workspace (lib + cli)
+        run: cargo build --workspace --all-targets --locked
+      - name: Clippy (lint)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Test workspace (lib + cli)
+        run: cargo test --workspace --all-features --locked
