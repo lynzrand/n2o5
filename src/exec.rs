@@ -5,13 +5,12 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{Arc, mpsc},
-    time::SystemTime,
 };
 
 use indexmap::IndexSet;
 use petgraph::visit::Walker;
 use rayon::Scope;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     db::{BuildHash, BuildInfo, ExecDb, InputHash},
@@ -509,13 +508,14 @@ fn stat_node(
 fn write_build(
     db: &dyn ExecDb,
     graph: &BuildGraph,
+    world: &dyn World,
     build: &BuildNode,
     build_hash: BuildHash,
     input_hash: InputHash,
 ) {
     let mut txn = db.begin_write();
 
-    let now = SystemTime::now();
+    let now = world.now();
 
     // Write build info
     let build_info = BuildInfo {
@@ -582,7 +582,7 @@ fn run_build(state: Arc<SharedState<'_>>, id: BuildId, report: mpsc::Sender<Buil
             let build_result = state.world.execute(state.user_state, cmd);
             match &build_result {
                 Ok(BuildStatusKind::Succeeded) => {
-                    write_build(db, graph, build, build_id, input_hash);
+                    write_build(db, graph, state.world, build, build_id, input_hash);
                 }
                 Ok(BuildStatusKind::UpToDate) => {
                     // This should not happen, but we allow it.
@@ -590,7 +590,7 @@ fn run_build(state: Arc<SharedState<'_>>, id: BuildId, report: mpsc::Sender<Buil
                         "Build {:?} returned UpToDate when it was Outdated. This is unexpected.",
                         id
                     );
-                    write_build(db, graph, build, build_id, input_hash);
+                    write_build(db, graph, state.world, build, build_id, input_hash);
                 }
                 Ok(BuildStatusKind::Failed) | Err(_) => {
                     invalidate_build(db, graph, build, build_id);

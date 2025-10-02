@@ -24,7 +24,7 @@ pub type MockCallback =
 
 struct MockWorldInner {
     /// A number that roughly represent a mocked system time. Increases every
-    /// time a file is touched.
+    /// time the world queries "now" or a file is touched.
     epoch: u64,
     /// Map from in-memory file list to their modification epoch
     files: HashMap<PathBuf, u64>,
@@ -54,6 +54,12 @@ impl World for MockWorld {
             .get(path)
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"))?;
         Ok(std::time::UNIX_EPOCH + std::time::Duration::from_secs(*epoch))
+    }
+
+    fn now(&self) -> std::time::SystemTime {
+        let mut inner = self.inner.lock().unwrap();
+        inner.epoch += 1;
+        std::time::UNIX_EPOCH + std::time::Duration::from_secs(inner.epoch)
     }
 
     fn execute(

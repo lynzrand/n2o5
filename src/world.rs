@@ -24,6 +24,9 @@ pub trait World: Send + Sync {
     /// Get the modification time of a file.
     fn mtime(&self, path: &Path) -> std::io::Result<SystemTime>;
 
+    /// Get the current time. Implementations may return a mocked monotonic time.
+    fn now(&self) -> SystemTime;
+
     fn execute(&self, state: &dyn Any, cmd: &BuildMethod) -> std::io::Result<BuildStatusKind>;
 }
 
@@ -39,6 +42,10 @@ impl World for LocalWorld {
 
     fn mtime(&self, path: &Path) -> std::io::Result<SystemTime> {
         path.metadata()?.modified()
+    }
+
+    fn now(&self) -> SystemTime {
+        SystemTime::now()
     }
 
     fn execute(&self, state: &dyn Any, cmd: &BuildMethod) -> std::io::Result<BuildStatusKind> {
