@@ -9,7 +9,7 @@ use std::{
 
 use n2o4::{
     exec::BuildStatusKind,
-    graph::{BuildCommand, BuildMethod},
+    graph::{BuildCommand, BuildGraph, BuildId, BuildMethod},
     world::World,
 };
 use smol_str::SmolStr;
@@ -65,10 +65,15 @@ impl World for MockWorld {
     fn execute(
         &self,
         state: &dyn std::any::Any,
-        cmd: &n2o4::graph::BuildMethod,
+        graph: &BuildGraph,
+        id: BuildId,
     ) -> std::io::Result<BuildStatusKind> {
+        let node = graph
+            .lookup_build(id)
+            .expect("invalid BuildId passed to World::execute");
+
         let mut inner = self.inner.lock().unwrap();
-        match cmd {
+        match &node.command {
             n2o4::graph::BuildMethod::Phony => {
                 inner.exec_log.push(MockExecResult::Phony);
             }
@@ -80,11 +85,26 @@ impl World for MockWorld {
                 // We don't actually call the callback in the mock world.
             }
         }
-        if let Some(cb) = &inner.callback {
-            cb(state, cmd)
+
+        // Execute the callback
+        let res = if let Some(cb) = &inner.callback {
+            cb(state, &node.command)
         } else {
             Ok(BuildStatusKind::Succeeded)
+        };
+
+        if matches!(res, Ok(BuildStatusKind::Succeeded)) {
+            // Touch all output files
+            // Note that since we have acquired the lock above, we can't use
+            // self.touch_file here.
+            inner.epoch += 1;
+            let epoch = inner.epoch;
+            for out in &node.outs {
+                let path = graph.lookup_path(*out).expect("invalid FileId");
+                inner.files.insert(path.to_owned(), epoch);
+            }
         }
+        res
     }
 }
 

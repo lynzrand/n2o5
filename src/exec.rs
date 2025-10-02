@@ -593,8 +593,7 @@ fn run_build(state: Arc<SharedState<'_>>, id: BuildId, report: mpsc::Sender<Buil
             Ok(BuildStatusKind::Failed) // TODO: report missing file
         }
         NodeInputKind::Outdated => {
-            let cmd = &build.command;
-            let build_result = state.world.execute(state.user_state, cmd);
+            let build_result = state.world.execute(state.user_state, graph, id);
             match &build_result {
                 Ok(BuildStatusKind::Succeeded) => {
                     write_build(db, graph, state.world, build, build_id, input_hash);

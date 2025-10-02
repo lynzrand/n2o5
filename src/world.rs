@@ -1,6 +1,9 @@
 use std::{any::Any, path::Path, process::Command, time::SystemTime};
 
-use crate::{exec::BuildStatusKind, graph::BuildMethod};
+use crate::{
+    exec::BuildStatusKind,
+    graph::{BuildGraph, BuildId, BuildMethod},
+};
 
 /// A trait that abstracts over how the executor interacts with the outside world.
 ///
@@ -27,7 +30,20 @@ pub trait World: Send + Sync {
     /// Get the current time. Implementations may return a mocked monotonic time.
     fn now(&self) -> SystemTime;
 
-    fn execute(&self, state: &dyn Any, cmd: &BuildMethod) -> std::io::Result<BuildStatusKind>;
+    /// Execute a given node within the build graph.
+    ///
+    /// This method passes the build graph and the build ID of the node to be
+    /// executed, instead of just the [`BuildMethod`]. This allows the
+    /// implementor to apply a more custom logic based on the node and graph
+    /// structure, such as sandboxing or caching.
+    ///
+    /// The build ID is guaranteed to be valid within the given graph.
+    fn execute(
+        &self,
+        state: &dyn Any,
+        graph: &BuildGraph,
+        node: BuildId,
+    ) -> std::io::Result<BuildStatusKind>;
 }
 
 /// The default implementation of [`World`], which interacts with the local
@@ -48,8 +64,16 @@ impl World for LocalWorld {
         SystemTime::now()
     }
 
-    fn execute(&self, state: &dyn Any, cmd: &BuildMethod) -> std::io::Result<BuildStatusKind> {
-        run_build_inner(state, cmd)
+    fn execute(
+        &self,
+        state: &dyn Any,
+        graph: &BuildGraph,
+        node: BuildId,
+    ) -> std::io::Result<BuildStatusKind> {
+        let build_node = graph
+            .lookup_build(node)
+            .expect("invalid BuildId passed to World::execute");
+        run_build_inner(state, &build_node.command)
     }
 }
 
