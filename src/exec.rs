@@ -421,10 +421,42 @@ fn stat_node(
     let txn = db.begin_read();
 
     // Get metadata of build
-    let Some(build_info) = txn.get_build_info(build_hash) else {
+    let build_info = txn.get_build_info(build_hash);
+
+    // Check if input files are up-to-date
+    //
+    // We need to check if any input file is:
+    // - missing (we can't execute a build with missing inputs)
+    // - mtime later than the last time the build was started (outdated)
+    //
+    // Input checking is done first is because missing inputs is a hard error,
+    // while outdated inputs only means we need to rebuild.
+    let mtime_should_before = build_info.as_ref().map(|x| x.last_start);
+    for &file in &node.ins {
+        let path = graph.lookup_path(file).expect("File should exist");
+        if !world.exists(path) {
+            debug!("Outdated: input file {path:?} does not exist");
+            return NodeInputKind::Missing(file);
+        }
+        let mtime = match world.mtime(path) {
+            Ok(value) => value,
+            Err(e) => return NodeInputKind::CannotRead(path.to_owned(), e),
+        };
+        if mtime_should_before.is_none() || mtime_should_before.unwrap() < mtime {
+            debug!(
+                "Outdated: input file {path:?} modified at {:?} after build last_start {:?}",
+                mtime, mtime_should_before
+            );
+            return NodeInputKind::Outdated;
+        }
+    }
+
+    // Now we can unwrap build_info because it's all outdated from here
+    let Some(build_info) = build_info else {
         debug!("Outdated: no build info for build {build_hash:?}");
         return NodeInputKind::Outdated; // Never built before
     };
+    let mtime_should_before = build_info.last_start;
 
     // We need the build to run when any output is:
     // - not existant, either on disk or in DB
@@ -472,31 +504,6 @@ fn stat_node(
             build_info.input_set_digest, input_hash
         );
         return NodeInputKind::Outdated; // Input set changed
-    }
-
-    // Check if input files are up-to-date
-    //
-    // We need to check if any input file is:
-    // - missing (we can't execute a build with missing inputs)
-    // - mtime later than the last time the build was started (outdated)
-    let mtime_should_before = build_info.last_start;
-    for &file in &node.ins {
-        let path = graph.lookup_path(file).expect("File should exist");
-        if !world.exists(path) {
-            debug!("Outdated: input file {path:?} does not exist");
-            return NodeInputKind::Missing(file);
-        }
-        let mtime = match world.mtime(path) {
-            Ok(value) => value,
-            Err(e) => return NodeInputKind::CannotRead(path.to_owned(), e),
-        };
-        if mtime > mtime_should_before {
-            debug!(
-                "Outdated: input file {path:?} modified at {:?} after build last_start {:?}",
-                mtime, mtime_should_before
-            );
-            return NodeInputKind::Outdated;
-        }
     }
 
     // Check additional inputs
