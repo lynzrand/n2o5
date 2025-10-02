@@ -40,5 +40,6 @@ Ok(
                 rspfile_content: None,
             },
         ],
+        phony: {},
     },
 )
