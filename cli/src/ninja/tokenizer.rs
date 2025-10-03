@@ -101,19 +101,6 @@ impl<'s> Lexer<'s> {
         self.inner.extras
     }
 
-    pub(super) fn peek_is(&mut self, expected: Token<'s>) -> Result<bool, Error> {
-        Ok(self.peek()? == Some(expected))
-    }
-
-    pub(super) fn eat_if(&mut self, expected: Token<'s>) -> Result<bool, Error> {
-        if self.peek_is(expected)? {
-            let _ = self.next();
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-
     pub(super) fn expect(&mut self, expected: Token<'s>) -> Result<(), Error> {
         let next = self.next().ok_or(Error::UnexpectedEof(format!(
             "expecting token {expected:?}"
@@ -208,7 +195,7 @@ impl From<LexError> for Error {
     fn from(err: LexError) -> Self {
         match err {
             LexError::UnrecognizedToken(line, col) => Self::UnrecognizedToken(line, col),
-            LexError::Unknown => Self::UnknownLexError,
+            LexError::Unknown => Self::UnknownLexing,
         }
     }
 }

@@ -25,7 +25,7 @@ pub enum Error {
     UnexpectedEof(String),
 
     #[error("An unknown error occurred during lexing")]
-    UnknownLexError,
+    UnknownLexing,
 
     #[error("Unexpected indentation at top level")]
     UnexpectedIndentation,
@@ -168,6 +168,7 @@ impl<'r, 's> ExpansionScope<'r, 's> {
 }
 
 /// A `build` statement, expanded
+#[allow(unused)] // Until we wire it up
 #[derive(Debug, Clone)]
 pub struct Build<'s> {
     pub inputs: Vec<Cow<'s, str>>,
@@ -198,6 +199,7 @@ pub struct Build<'s> {
 }
 
 /// A `build` statement with the `phony` rule
+#[allow(unused)] // Until we wire it up
 #[derive(Debug, Clone)]
 pub struct PhonyBuild<'s> {
     pub targets: Vec<Cow<'s, str>>,

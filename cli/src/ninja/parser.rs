@@ -1,7 +1,6 @@
-use indexmap::IndexMap;
 use smallvec::SmallVec;
 use std::path::Path;
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 
 use crate::ninja::model::ParseBuildResult;
 
