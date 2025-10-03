@@ -59,6 +59,7 @@ pub fn parse<'s>(source: &'s ParseSource, s: &'s str) -> Result<NinjaFile<'s>, E
         rules: Default::default(),
         builds: Default::default(),
         phony: Default::default(),
+        defaults: Default::default(),
     };
     parse_inner(source, s, &mut file)?;
     Ok(file)
@@ -103,8 +104,7 @@ fn parse_inner<'s>(
                     let peek_pos = lexer.peeked_pos().unwrap();
                     return Err(Error::UnexpectedToken(
                         format!("redefinition of rule {name}"),
-                        peek_pos.0,
-                        peek_pos.1,
+                        peek_pos,
                     ));
                 }
             }
@@ -123,12 +123,27 @@ fn parse_inner<'s>(
             Word("pool") => {
                 todo!("pool directive not implemented")
             }
+            Word("default") => {
+                // default <outputs...>
+                let _ = lexer.next();
+                lexer.skip_spaces();
+                while lexer.peek()?.is_some_and(|x| x.can_start_word()) {
+                    let output = parse_expand_word(&mut lexer, &[&file.global_scope], true)?;
+                    file.defaults.push(output);
+                    lexer.skip_spaces();
+                }
+                // Consume the line feed(s)
+                match lexer.peek()? {
+                    Some(Token::LineFeed) | Some(Token::IndentedLineFeed) => {}
+                    _ => lexer.unexpected("expecting newlines after default outputs")?,
+                }
+            }
             Word(_) => {
                 let (k, v) = parse_variable_assignment(&mut lexer, &[&file.global_scope])?;
                 file.global_scope.insert(k, v);
                 // TODO: check top-level vars `builddir` and `ninja_required_version`
             }
-            _ => lexer.unexpected()?,
+            _ => lexer.unexpected("when parsing top-level")?,
         }
     }
 
@@ -147,13 +162,13 @@ fn parse_rule<'s>(lexer: &mut Lexer<'s>) -> Result<(&'s str, Rule<'s>), Error> {
         .next()
         .ok_or(Error::UnexpectedEof("parsing name of rule".into()))??;
     let Token::Word(name) = name_tok else {
-        lexer.unexpected()?
+        lexer.unexpected("when parsing rule name")?
     };
     lexer.skip_spaces();
     // Expect at least one newline, then consume all consecutive newlines and detect indentation
     match lexer.peek()? {
         Some(Token::LineFeed) | Some(Token::IndentedLineFeed) => {}
-        _ => lexer.unexpected()?,
+        _ => lexer.unexpected("expecting newlines when parsing rule body")?,
     }
     let mut indented = lexer.eat_newlines();
 
@@ -186,17 +201,19 @@ fn parse_build<'s>(
 
     // <outputs>
     let mut outputs = Vec::new();
-    loop {
-        match lexer.peek()?.ok_or(Error::UnexpectedEof(
-            "parsing the outputs of a build".into(),
-        ))? {
-            tok if tok.can_start_word() => {
-                let output = parse_expand_word(lexer, io_expand_scope, true)?;
-                outputs.push(output);
-                lexer.skip_spaces();
-            }
-            Token::Colon => break,
-            _ => lexer.unexpected()?,
+    let mut implicit_outputs = Vec::new();
+    while lexer.peek()?.is_some_and(|t| t.can_start_word()) {
+        let input = parse_expand_word(lexer, io_expand_scope, true)?;
+        outputs.push(input);
+        lexer.skip_spaces();
+    }
+    if lexer.peek()? == Some(Token::Pipe) {
+        let _ = lexer.next(); // consume the pipe
+        lexer.skip_spaces();
+        while lexer.peek()?.is_some_and(|t| t.can_start_word()) {
+            let input = parse_expand_word(lexer, io_expand_scope, true)?;
+            implicit_outputs.push(input);
+            lexer.skip_spaces();
         }
     }
 
@@ -208,7 +225,7 @@ fn parse_build<'s>(
         .next()
         .ok_or(Error::UnexpectedEof("parsing the name of a rule".into()))??;
     let Token::Word(rule_name) = rule_tok else {
-        lexer.unexpected()?
+        lexer.unexpected("when parsing build rule name")?
     };
     let rule = if rule_name == "phony" {
         None
@@ -253,7 +270,7 @@ fn parse_build<'s>(
     // LF(s), prepare to parse indented variables
     match lexer.peek()? {
         Some(Token::LineFeed) | Some(Token::IndentedLineFeed) => {}
-        _ => lexer.unexpected()?,
+        _ => lexer.unexpected("expected newlines when parsing rule vars")?,
     }
     let mut indented = lexer.eat_newlines();
 
@@ -369,8 +386,10 @@ fn parse_variable_assignment<'s>(
         "parsing the name of an assignment".into(),
     ))??;
     let Token::Word(name) = name else {
-        let (line, col) = lexer.cursor_pos();
-        return Err(Error::UnexpectedToken(format!("{name:?}"), line, col));
+        return Err(Error::UnexpectedToken(
+            format!("{name:?}"),
+            lexer.cursor_pos(),
+        ));
     };
 
     lexer.skip_spaces();
@@ -391,8 +410,10 @@ fn parse_variable_assignment_no_expand<'s>(
         "parsing the name of an assignment".into(),
     ))??;
     let Token::Word(name) = name else {
-        let (line, col) = lexer.cursor_pos();
-        return Err(Error::UnexpectedToken(format!("{name:?}"), line, col));
+        return Err(Error::UnexpectedToken(
+            format!("{name:?}"),
+            lexer.cursor_pos(),
+        ));
     };
 
     lexer.skip_spaces();

@@ -1,10 +1,7 @@
-use super::model::Error;
+use super::model::{Error, Pos};
 
 /// A very barebones tokenizer for ninja build files
 #[derive(Debug, PartialEq, Eq, Clone, Copy, logos::Logos)]
-#[logos(skip(r"#.*(?:\n)"))] // Skip comments
-#[logos(skip(r"\$\r?\n"))] // Skip line continuations
-#[logos(extras = (usize,usize))]
 #[logos(error(LexError, LexError::from_lexer))]
 pub(super) enum Token<'s> {
     /// A line feed followed by indentation spaces of the next line
@@ -52,6 +49,13 @@ pub(super) enum Token<'s> {
     /// A word segment without escaping
     #[regex(r"[^=\s\$:|]+")]
     Word(&'s str),
+
+    // Skipped tokens, kept for location tracking. They are skipped during
+    // internal `next`.
+    #[regex(r"#.*(?:\n)")]
+    Comment,
+    #[regex(r"\$\r?\n")]
+    LineContinuation,
 }
 
 impl<'s> Token<'s> {
@@ -61,20 +65,75 @@ impl<'s> Token<'s> {
             Token::Word(_) | Token::Escaped(_) | Token::Variable(_) | Token::BracedVariable(_)
         )
     }
+
+    fn is_skipped(&self) -> bool {
+        matches!(self, Token::Comment | Token::LineContinuation)
+    }
 }
 
 pub(super) struct Lexer<'s> {
     inner: logos::Lexer<'s, Token<'s>>,
+    /// The starting position of the token just returned by `next_inner`
+    pos: Pos,
+    /// The ending position of the token just returned by `next_inner`
+    pos_end: Pos,
+
+    // Manual peeking
     peeked: Option<Token<'s>>,
-    peeked_pos: Option<(usize, usize)>,
+    peeked_pos: Option<Pos>,
+}
+
+fn line_col_offset(t: &str) -> (usize, usize) {
+    let mut lines = 0;
+    let mut last_line = "";
+    for l in t.split('\n') {
+        lines += 1;
+        last_line = l;
+    }
+    lines -= 1;
+    (lines, last_line.len())
 }
 
 impl<'s> Lexer<'s> {
     pub(super) fn new(s: &'s <Token<'s> as logos::Logos<'s>>::Source) -> Self {
+        let inner = logos::Lexer::new(s);
+        // Initialize extras with starting cursor position
         Self {
-            inner: logos::Lexer::new(s),
+            inner,
+            pos: Pos::new(0, 0),
+            pos_end: Pos::new(0, 0),
             peeked: None,
             peeked_pos: None,
+        }
+    }
+
+    fn next_inner(&mut self) -> Option<Result<Token<'s>, Error>> {
+        loop {
+            let next = self.inner.next()?;
+            self.pos = self.pos_end;
+
+            // Move position to the end of the matched slice
+            let slice = self.inner.slice();
+            let (line_offset, col_offset) = line_col_offset(slice);
+            let mut new_pos_end = self.pos_end;
+            if line_offset > 0 {
+                new_pos_end.line += line_offset;
+                new_pos_end.column = col_offset;
+            } else {
+                new_pos_end.column += col_offset;
+            }
+            self.pos_end = new_pos_end;
+
+            // Return
+            match next {
+                Ok(tok) if tok.is_skipped() => continue,
+                _ => {
+                    return Some(next.map_err(|e| match e {
+                        LexError::Unknown => Error::UnknownLexing(self.pos),
+                        LexError::UnrecognizedToken => Error::UnrecognizedToken(self.pos),
+                    }));
+                }
+            }
         }
     }
 
@@ -82,9 +141,9 @@ impl<'s> Lexer<'s> {
         if let Some(tok) = self.peeked {
             Ok(Some(tok))
         } else {
-            let next = self.inner.next().transpose()?;
+            let next = self.next_inner().transpose()?;
             if next.is_some() {
-                self.peeked_pos = Some(self.inner.extras);
+                self.peeked_pos = Some(self.pos);
             } else {
                 self.peeked_pos = None;
             }
@@ -93,12 +152,12 @@ impl<'s> Lexer<'s> {
         }
     }
 
-    pub(super) fn peeked_pos(&self) -> Option<(usize, usize)> {
+    pub(super) fn peeked_pos(&self) -> Option<Pos> {
         self.peeked_pos
     }
 
-    pub(super) fn cursor_pos(&self) -> (usize, usize) {
-        self.inner.extras
+    pub(super) fn cursor_pos(&self) -> Pos {
+        self.pos
     }
 
     pub(super) fn expect(&mut self, expected: Token<'s>) -> Result<(), Error> {
@@ -110,21 +169,19 @@ impl<'s> Lexer<'s> {
             Ok(())
         } else {
             Err(Error::UnexpectedToken(
-                format!("{next:?}"),
-                self.inner.extras.0,
-                self.inner.extras.1,
+                format!("{next:?}, expected {expected:?}"),
+                self.pos,
             ))
         }
     }
 
-    pub(super) fn unexpected<T>(&mut self) -> Result<T, Error> {
+    pub(super) fn unexpected<T>(&mut self, desc: &str) -> Result<T, Error> {
         let next = self.next().ok_or(Error::UnexpectedEof(
             "expecting some token, got end of file".into(),
         ))??;
         Err(Error::UnexpectedToken(
-            format!("{next:?}"),
-            self.inner.extras.0,
-            self.inner.extras.1,
+            format!("{next:?}, {}", desc),
+            self.pos,
         ))
     }
 
@@ -172,7 +229,7 @@ impl<'s> Iterator for Lexer<'s> {
             let _pos = self.peeked_pos.take();
             Some(Ok(tok))
         } else {
-            self.inner.next().map(|x| x.map_err(Into::into))
+            self.next_inner()
         }
     }
 }
@@ -182,20 +239,11 @@ impl<'s> Iterator for Lexer<'s> {
 pub(super) enum LexError {
     #[default]
     Unknown,
-    UnrecognizedToken(usize, usize),
+    UnrecognizedToken,
 }
 
 impl LexError {
-    fn from_lexer<'a>(lexer: &mut logos::Lexer<'a, Token<'a>>) -> Self {
-        Self::UnrecognizedToken(lexer.extras.0, lexer.extras.1)
-    }
-}
-
-impl From<LexError> for Error {
-    fn from(err: LexError) -> Self {
-        match err {
-            LexError::UnrecognizedToken(line, col) => Self::UnrecognizedToken(line, col),
-            LexError::Unknown => Self::UnknownLexing,
-        }
+    fn from_lexer<'a>(_lexer: &mut logos::Lexer<'a, Token<'a>>) -> Self {
+        Self::UnrecognizedToken
     }
 }

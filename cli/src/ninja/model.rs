@@ -6,8 +6,8 @@ use std::{borrow::Cow, sync::Arc};
 /// Errors during parsing of Ninja files.
 #[derive(Clone, PartialEq, Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Unrecognized token at {0}:{1}")]
-    UnrecognizedToken(usize, usize),
+    #[error("Unrecognized token at {0}")]
+    UnrecognizedToken(Pos),
 
     #[error("Unknown variable {0}")]
     UnknownVariable(String),
@@ -18,17 +18,41 @@ pub enum Error {
     #[error("Invalid deps type {0} (expected: gcc|msvc)")]
     InvalidDepsType(String),
 
-    #[error("Unexpected token {0:?} at {1}:{2}")]
-    UnexpectedToken(String, usize, usize),
+    #[error("Unexpected token {0} at {1}")]
+    UnexpectedToken(String, Pos),
 
     #[error("Unexpected end of file when {0}")]
     UnexpectedEof(String),
 
     #[error("An unknown error occurred during lexing")]
-    UnknownLexing,
+    UnknownLexing(Pos),
 
     #[error("Unexpected indentation at top level")]
     UnexpectedIndentation,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Pos {
+    pub line: usize,
+    pub column: usize,
+}
+
+impl Pos {
+    pub fn new(line: usize, column: usize) -> Self {
+        Self { line, column }
+    }
+}
+
+impl From<(usize, usize)> for Pos {
+    fn from((line, column): (usize, usize)) -> Self {
+        Self { line, column }
+    }
+}
+
+impl std::fmt::Display for Pos {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.line, self.column)
+    }
 }
 
 /// Dependency processing type for the `deps` rule variable
@@ -221,4 +245,5 @@ pub struct NinjaFile<'s> {
     pub rules: IndexMap<&'s str, Rule<'s>>,
     pub builds: Vec<Build<'s>>,
     pub phony: IndexMap<Cow<'s, str>, Arc<PhonyBuild<'s>>>,
+    pub defaults: Vec<Cow<'s, str>>,
 }
