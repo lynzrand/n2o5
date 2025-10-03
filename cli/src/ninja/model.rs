@@ -199,6 +199,7 @@ pub struct Build<'s> {
     pub implicit_inputs: Vec<Cow<'s, str>>,
     pub order_only_inputs: Vec<Cow<'s, str>>,
     pub outputs: Vec<Cow<'s, str>>,
+    pub implicit_outputs: Vec<Cow<'s, str>>,
 
     /// The command line to run (required)
     pub command: Cow<'s, str>,
@@ -227,6 +228,9 @@ pub struct Build<'s> {
 #[derive(Debug, Clone)]
 pub struct PhonyBuild<'s> {
     pub targets: Vec<Cow<'s, str>>,
+    pub implicit_outputs: Vec<Cow<'s, str>>,
+    pub inputs: Vec<Cow<'s, str>>,
+    pub implicit_inputs: Vec<Cow<'s, str>>,
     pub order_only_inputs: Vec<Cow<'s, str>>,
     pub description: Option<Cow<'s, str>>,
 }

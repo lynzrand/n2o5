@@ -298,10 +298,20 @@ fn parse_build<'s>(
     };
 
     if rule_name == "phony" {
-        let phony = expand_phony(&exp_scope, &order_only_inputs)?;
+        let phony = expand_phony(
+            &exp_scope,
+            &implicit_inputs,
+            &order_only_inputs,
+            &implicit_outputs,
+        )?;
         Ok(ParseBuildResult::Phony(phony))
     } else {
-        let build = expand_build(&exp_scope, &implicit_inputs, &order_only_inputs)?;
+        let build = expand_build(
+            &exp_scope,
+            &implicit_inputs,
+            &order_only_inputs,
+            &implicit_outputs,
+        )?;
         Ok(ParseBuildResult::Build(build))
     }
 }
@@ -310,6 +320,7 @@ fn expand_build<'s>(
     exp_scope: &ExpansionScope<'_, 's>,
     implicit_input: &[Cow<'s, str>],
     order_only_input: &[Cow<'s, str>],
+    implicit_output: &[Cow<'s, str>],
 ) -> Result<Build<'s>, Error> {
     // Required: command
     let Some(command) = exp_scope.get("command") else {
@@ -351,6 +362,7 @@ fn expand_build<'s>(
         implicit_inputs: implicit_input.to_vec(),
         order_only_inputs: order_only_input.to_vec(),
         outputs: exp_scope.out_files.to_vec(),
+        implicit_outputs: implicit_output.to_vec(),
 
         command,
         depfile,
@@ -367,12 +379,17 @@ fn expand_build<'s>(
 
 fn expand_phony<'s>(
     exp_scope: &ExpansionScope<'_, 's>,
+    implicit_input: &[Cow<'s, str>],
     order_only_input: &[Cow<'s, str>],
+    implicit_output: &[Cow<'s, str>],
 ) -> Result<PhonyBuild<'s>, Error> {
     let description = exp_scope.get("description");
     Ok(PhonyBuild {
         targets: exp_scope.out_files.to_vec(),
+        inputs: exp_scope.in_files.to_vec(),
         order_only_inputs: order_only_input.to_vec(),
+        implicit_outputs: implicit_output.to_vec(),
+        implicit_inputs: implicit_input.to_vec(),
         description,
     })
 }

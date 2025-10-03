@@ -28,6 +28,7 @@ Ok(
                 outputs: [
                     "out",
                 ],
+                implicit_outputs: [],
                 command: "echo \"this is a demo of bar\"",
                 depfile: None,
                 deps: None,

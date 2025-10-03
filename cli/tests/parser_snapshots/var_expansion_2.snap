@@ -28,6 +28,7 @@ Ok(
                     "foo bar/baz",
                     "other file",
                 ],
+                implicit_outputs: [],
                 command: "command 'foo bar/baz' 'other file'",
                 depfile: None,
                 deps: None,
