@@ -41,5 +41,6 @@ Ok(
             },
         ],
         phony: {},
+        defaults: [],
     },
 )
