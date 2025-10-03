@@ -25,11 +25,6 @@ jobs:
           components: clippy
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: 'workspace'
-          workspaces: |
-            . -> target
-            cli -> target
       - name: Show versions
         run: |
           rustc -Vv
