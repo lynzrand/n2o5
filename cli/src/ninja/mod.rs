@@ -1,3 +1,4 @@
+pub mod convert;
 pub mod model;
 pub mod parser;
 mod tokenizer;
@@ -16,8 +17,9 @@ pub fn run(cmd: &NinjaSubcommand) -> anyhow::Result<()> {
     let parse_source = ParseSource::new(NINJA_DEFAULT_FILENAME);
     let parsed = parser::parse(&parse_source, parse_source.main_file())?;
 
-    // TODO: translate to n2o4 graph
-    println!("{:#?}", parsed);
+    let n2o4_graph = convert::ninja_to_n2o4(&parsed)?;
+
+    dbg!(&n2o4_graph);
 
     Ok(())
 }

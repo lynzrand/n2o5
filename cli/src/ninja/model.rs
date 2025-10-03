@@ -228,10 +228,12 @@ pub struct Build<'s> {
 #[derive(Debug, Clone)]
 pub struct PhonyBuild<'s> {
     pub targets: Vec<Cow<'s, str>>,
+    #[allow(unused)]
     pub implicit_outputs: Vec<Cow<'s, str>>,
     pub inputs: Vec<Cow<'s, str>>,
     pub implicit_inputs: Vec<Cow<'s, str>>,
     pub order_only_inputs: Vec<Cow<'s, str>>,
+    #[allow(unused)]
     pub description: Option<Cow<'s, str>>,
 }
 
