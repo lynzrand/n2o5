@@ -18,9 +18,17 @@ impl ExecRedb {
     }
 
     pub fn open(p: impl AsRef<Path>) -> Result<Self, redb::DatabaseError> {
-        Ok(Self {
-            inner: redb::Database::open(p)?,
-        })
+        let db = redb::Database::create(p)?;
+        let txn = db
+            .begin_write()
+            .expect("Failed to begin initial transaction");
+        txn.open_table(FILE_TABLE)
+            .expect("Failed to create file table");
+        txn.open_table(BUILD_TABLE)
+            .expect("Failed to create build table");
+        txn.commit().expect("Failed to commit initial transaction");
+
+        Ok(Self { inner: db })
     }
 }
 
