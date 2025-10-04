@@ -1,6 +1,8 @@
 //! Caches the current build status onto disk.
 
 pub mod in_memory;
+
+#[cfg(feature = "db-redb")]
 pub mod redb;
 
 use std::{
