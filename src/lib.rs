@@ -3,6 +3,7 @@ pub mod exec;
 pub mod graph;
 pub mod shape;
 pub mod world;
+pub mod progress;
 
 // Re-exports for convenience
 pub use db::ExecDb;
