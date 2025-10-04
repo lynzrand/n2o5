@@ -8,7 +8,7 @@ use n2o4::graph::{BuildCommand, BuildId, BuildMethod, BuildNode, FileId, GraphBu
 use crate::ninja::model::{Build, NinjaFile};
 
 /// Convert a ninja build file to n2o4 in-memory graph
-pub fn ninja_to_n2o4(ninja: &NinjaFile<'_>) -> anyhow::Result<n2o4::graph::BuildGraph> {
+pub fn ninja_to_n2o4(ninja: &NinjaFile<'_>) -> anyhow::Result<ConvertOutput> {
     let mut cx = ConvertCtx {
         ninja,
         builder: GraphBuilder::new(),
@@ -20,7 +20,16 @@ pub fn ninja_to_n2o4(ninja: &NinjaFile<'_>) -> anyhow::Result<n2o4::graph::Build
         translate_build(&mut cx, build);
     }
 
-    Ok(cx.builder.build()?)
+    let graph = cx.builder.build()?;
+    Ok(ConvertOutput {
+        graph,
+        file_to_build: cx.build_out_files,
+    })
+}
+
+pub struct ConvertOutput {
+    pub graph: n2o4::graph::BuildGraph,
+    pub file_to_build: HashMap<FileId, BuildId>,
 }
 
 struct ConvertCtx<'a, 's> {
