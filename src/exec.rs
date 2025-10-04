@@ -337,7 +337,11 @@ impl<'a> Executor<'a> {
             BuildStatusKind::Started => panic!("Build cannot be started after running"),
             BuildStatusKind::Succeeded | BuildStatusKind::UpToDate => {
                 for node in self.state.graph.build_dependents(id) {
-                    let dep = self.builds.get_mut(&node).expect("Build should exist");
+                    let Some(dep) = self.builds.get_mut(&node) else {
+                        // The node is not tracked, so we don't care about it
+                        continue;
+                    };
+
                     if dep.kind.is_finished() {
                         if dep.kind.is_successful() {
                             panic!(
@@ -362,7 +366,10 @@ impl<'a> Executor<'a> {
                 // Mark skipped for all transitive dependents
                 let dfs = petgraph::visit::Dfs::new(&self.state.graph.graph, id);
                 for node in dfs.iter(&self.state.graph.graph).skip(1) {
-                    let dep = self.builds.get_mut(&node).expect("Build should exist");
+                    let Some(dep) = self.builds.get_mut(&node) else {
+                        // The node is not tracked, so we don't care about it
+                        continue;
+                    };
                     if dep.kind.is_finished() {
                         continue;
                     }
