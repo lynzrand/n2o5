@@ -1,5 +1,5 @@
 [package]
-name = "n2o4"
+name = "n2o5"
 version = "0.1.0"
 edition = "2024"
 
@@ -19,10 +19,10 @@ tracing = "0.1.41"
 twox-hash = "2.1.2"
 
 [workspace]
-members = [".", "cli", "crates/n2o4-heed"]
+members = [".", "cli", "crates/n2o5-heed"]
 
 [workspace.dependencies]
-n2o4 = { path = "." }
+n2o5 = { path = "." }
 
 [dev-dependencies]
 test-log = { version = "0.2.18", features = ["trace"] }

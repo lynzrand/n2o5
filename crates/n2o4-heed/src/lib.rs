@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use heed::EnvOpenOptions;
-use n2o4::db::ExecDb;
+use n2o5::db::ExecDb;
 
 use crate::codec::{BuildHashKey, BuildInfoWrap, FileInfoWrap, PathKey};
 
@@ -70,7 +70,7 @@ impl ExecDb for ExecHeedDb {
         wtxn.commit().expect("Failed to commit reset transaction");
     }
 
-    fn begin_read<'r>(&'r self) -> Box<dyn n2o4::db::DbReader + 'r> {
+    fn begin_read<'r>(&'r self) -> Box<dyn n2o5::db::DbReader + 'r> {
         let txn = self
             .inner
             .read_txn()
@@ -81,7 +81,7 @@ impl ExecDb for ExecHeedDb {
         })
     }
 
-    fn begin_write<'w>(&'w self) -> Box<dyn n2o4::db::DbWriter + 'w> {
+    fn begin_write<'w>(&'w self) -> Box<dyn n2o5::db::DbWriter + 'w> {
         let txn = self
             .inner
             .write_txn()

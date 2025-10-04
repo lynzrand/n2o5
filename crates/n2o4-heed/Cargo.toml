@@ -1,9 +1,9 @@
 [package]
-name = "n2o4-heed"
+name = "n2o5-heed"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 heed = "0.22.0"
-n2o4.workspace = true
+n2o5.workspace = true
 postcard = "1.1.3"

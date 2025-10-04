@@ -3,7 +3,7 @@
 use std::{borrow::Cow, os::unix::ffi::OsStrExt, path::Path};
 
 use heed::{BytesDecode, BytesEncode};
-use n2o4::db::{BuildHash, BuildInfo, FileInfo};
+use n2o5::db::{BuildHash, BuildInfo, FileInfo};
 
 pub(crate) struct PathKey;
 

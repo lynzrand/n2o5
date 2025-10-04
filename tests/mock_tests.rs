@@ -3,8 +3,8 @@
 //! Most of these tests are written by an LLM. They are very small tests, so
 //! it's acceptable.
 
-use n2o4::db::ExecDb;
-use n2o4::{
+use n2o5::db::ExecDb;
+use n2o5::{
     db::in_memory::InMemoryDb,
     exec::{BuildStatusKind, ExecConfig, Executor},
     graph::BuildMethod,
@@ -26,10 +26,10 @@ fn declare_db() -> InMemoryDb {
 
 fn run_graph(
     world: &MockWorld,
-    graph: &n2o4::graph::BuildGraph,
+    graph: &n2o5::graph::BuildGraph,
     cfg: ExecConfig,
     db: &dyn ExecDb,
-    want: impl IntoIterator<Item = n2o4::graph::BuildId>,
+    want: impl IntoIterator<Item = n2o5::graph::BuildId>,
 ) -> Vec<String> {
     let mut exec = Executor::with_world(&cfg, graph, db, world, &());
     exec.want(want);
@@ -121,16 +121,16 @@ macro_rules! mock_graph {
         {
             #[allow(unused)]
             struct MockContext {
-                graph: n2o4::graph::BuildGraph,
-                $($id: n2o4::graph::BuildId,)*
+                graph: n2o5::graph::BuildGraph,
+                $($id: n2o5::graph::BuildId,)*
             }
 
-            let mut __gb = n2o4::graph::GraphBuilder::new();
+            let mut __gb = n2o5::graph::GraphBuilder::new();
             $(
                 let __outs = vec![$(__gb.add_file($out)),*];
                 let __ins = vec![$(__gb.add_file($in)),*];
-                let __build = n2o4::graph::BuildNode {
-                    command: n2o4::graph::BuildMethod::SubCommand(n2o4::graph::BuildCommand {
+                let __build = n2o5::graph::BuildNode {
+                    command: n2o5::graph::BuildMethod::SubCommand(n2o5::graph::BuildCommand {
                         executable: std::path::PathBuf::from(stringify!($cmd)),
                         args: vec![],
                     }),

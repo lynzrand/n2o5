@@ -687,7 +687,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 
 [[package]]
-name = "n2o4"
+name = "n2o5"
 version = "0.1.0"
 dependencies = [
  "indexmap",
@@ -705,7 +705,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "n2o4-cli"
+name = "n2o5-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -716,18 +716,18 @@ dependencies = [
  "expect-test",
  "indexmap",
  "logos",
- "n2o4",
+ "n2o5",
  "shlex",
  "smallvec",
  "thiserror",
 ]
 
 [[package]]
-name = "n2o4-heed"
+name = "n2o5-heed"
 version = "0.1.0"
 dependencies = [
  "heed",
- "n2o4",
+ "n2o5",
  "postcard",
 ]
 

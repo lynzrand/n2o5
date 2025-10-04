@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 #[derive(Debug, clap::Parser)]
-#[clap(name = "n2o4", version, author)]
+#[clap(name = "n2o5", version, author)]
 pub struct Args {
     #[command(subcommand)]
     pub subcommand: Subcommand,

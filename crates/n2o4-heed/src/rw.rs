@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use heed::WithTls;
-use n2o4::db::{BuildHash, BuildInfo, DbReader, DbWriter, FileInfo};
+use n2o5::db::{BuildHash, BuildInfo, DbReader, DbWriter, FileInfo};
 
 use crate::codec::{BuildHashKey, BuildInfoWrap, FileInfoWrap, PathKey};
 use crate::{BUILD_INFO_DB_NAME, FILE_INFO_DB_NAME};
@@ -14,7 +14,7 @@ pub struct DbRead<'a> {
 }
 
 impl<'a> DbReader for DbRead<'a> {
-    fn get_build_info(&self, hash: n2o4::db::BuildHash) -> Option<n2o4::db::BuildInfo> {
+    fn get_build_info(&self, hash: n2o5::db::BuildHash) -> Option<n2o5::db::BuildInfo> {
         let db = self
             .env
             .open_database::<BuildHashKey, BuildInfoWrap>(&self.txn, Some(BUILD_INFO_DB_NAME))

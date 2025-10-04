@@ -7,7 +7,7 @@ use std::{
     sync::Mutex,
 };
 
-use n2o4::{
+use n2o5::{
     exec::BuildStatusKind,
     graph::{BuildCommand, BuildGraph, BuildId, BuildMethod},
     world::World,
@@ -74,13 +74,13 @@ impl World for MockWorld {
 
         let mut inner = self.inner.lock().unwrap();
         match &node.command {
-            n2o4::graph::BuildMethod::Phony => {
+            n2o5::graph::BuildMethod::Phony => {
                 inner.exec_log.push(MockExecResult::Phony);
             }
-            n2o4::graph::BuildMethod::SubCommand(cmd) => {
+            n2o5::graph::BuildMethod::SubCommand(cmd) => {
                 inner.exec_log.push(MockExecResult::Subcommand(cmd.clone()));
             }
-            n2o4::graph::BuildMethod::Callback(name, _) => {
+            n2o5::graph::BuildMethod::Callback(name, _) => {
                 inner.exec_log.push(MockExecResult::Callback(name.clone()));
                 // We don't actually call the callback in the mock world.
             }

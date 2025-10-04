@@ -1,5 +1,5 @@
 use expect_test::ExpectFile;
-use n2o4_cli::ninja::parser::{ParseSource, parse};
+use n2o5_cli::ninja::parser::{ParseSource, parse};
 
 fn snapshot(s: &str, exp: ExpectFile) {
     let source = ParseSource::new_in_memory(s);

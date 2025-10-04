@@ -3,12 +3,12 @@ use std::{
     ffi::{OsStr, OsString},
 };
 
-use n2o4::graph::{BuildCommand, BuildId, BuildMethod, BuildNode, FileId, GraphBuilder};
+use n2o5::graph::{BuildCommand, BuildId, BuildMethod, BuildNode, FileId, GraphBuilder};
 
 use crate::ninja::model::{Build, NinjaFile};
 
-/// Convert a ninja build file to n2o4 in-memory graph
-pub fn ninja_to_n2o4(ninja: &NinjaFile<'_>) -> anyhow::Result<ConvertOutput> {
+/// Convert a ninja build file to n2o5 in-memory graph
+pub fn ninja_to_n2o5(ninja: &NinjaFile<'_>) -> anyhow::Result<ConvertOutput> {
     let mut cx = ConvertCtx {
         ninja,
         builder: GraphBuilder::new(),
@@ -28,7 +28,7 @@ pub fn ninja_to_n2o4(ninja: &NinjaFile<'_>) -> anyhow::Result<ConvertOutput> {
 }
 
 pub struct ConvertOutput {
-    pub graph: n2o4::graph::BuildGraph,
+    pub graph: n2o5::graph::BuildGraph,
     pub file_to_build: HashMap<FileId, BuildId>,
 }
 

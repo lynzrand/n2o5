@@ -7,10 +7,10 @@ mod tokenizer;
 use crate::{cli::NinjaSubcommand, ninja::parser::ParseSource};
 
 use anyhow::{Context, anyhow};
-use n2o4::exec::{ExecConfig, Executor};
+use n2o5::exec::{ExecConfig, Executor};
 
 static NINJA_DEFAULT_FILENAME: &str = "build.ninja";
-static NINJA_DB_FILENAME: &str = "n2o4_ninja.db";
+static NINJA_DB_FILENAME: &str = "n2o5_ninja.db";
 
 pub fn run(cmd: &NinjaSubcommand) -> anyhow::Result<()> {
     assert!(!cmd.quiet, "Quiet mode not yet implemented");
@@ -26,10 +26,10 @@ pub fn run(cmd: &NinjaSubcommand) -> anyhow::Result<()> {
     let parsed = parser::parse(&parse_source, parse_source.main_file())
         .context("Failed to parse the ninja build file")?;
 
-    // Convert to n2o4 graph
-    let converted = convert::ninja_to_n2o4(&parsed)?;
-    let db = n2o4::db::redb::ExecRedb::open(NINJA_DB_FILENAME)
-        .context("Failed to open or create the n2o4_ninja.db database file")?;
+    // Convert to n2o5 graph
+    let converted = convert::ninja_to_n2o5(&parsed)?;
+    let db = n2o5::db::redb::ExecRedb::open(NINJA_DB_FILENAME)
+        .context("Failed to open or create the n2o5_ninja.db database file")?;
 
     // Map jobs -> parallelism; default to available parallelism
     let parallelism = match cmd.jobs {

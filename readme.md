@@ -1,12 +1,12 @@
-# n2o4
+# n2o5
 
-[![CI](https://github.com/lynzrand/n2o4/actions/workflows/ci.yml/badge.svg)](https://github.com/lynzrand/n2o4/actions/workflows/ci.yml)
+[![CI](https://github.com/lynzrand/n2o5/actions/workflows/ci.yml/badge.svg)](https://github.com/lynzrand/n2o5/actions/workflows/ci.yml)
 
 > Under construction. Expect hiccups and unfinished parts.
 
 A build system as library.
 
-`n2o4` is an idea grew out of fiddling [n2](https://github.com/evmar/n2).
+`n2o5` is an idea grew out of fiddling [n2](https://github.com/evmar/n2).
 Less ninjutsu, more oxidizer.
 
 ## Design & rationale
@@ -17,7 +17,7 @@ However, when writing build systems for high-level languages,
 it's often easier to think in the relationship between build command themselves,
 instead of writing the artifacts they generate and parsing it back to the graph.
 
-`n2o4` is a project that tries to explore build system design ideas from here:
+`n2o5` is a project that tries to explore build system design ideas from here:
 
 - An embedded build graph executor that runs in-memory graphs.
 - Works directly on build nodes and the edges connecting them.
@@ -25,27 +25,27 @@ instead of writing the artifacts they generate and parsing it back to the graph.
 - Build environment agnostic. Mock the world if you like.
 - First-class callbacks as build commands.
 
-`n2o4` also differs from `n2` significantly.
-In particular, `n2o4` is not optimized for Ninja compatibility,
+`n2o5` also differs from `n2` significantly.
+In particular, `n2o5` is not optimized for Ninja compatibility,
 and aims for better ergonomics as a library & in-memory graph usage.
 
 ## World and Database
 
-`n2o4` provides different world (file system and process spawning) and build database implementations
+`n2o5` provides different world (file system and process spawning) and build database implementations
 to accommodate different build environments and needs.
 
 Worlds:
 
-- `n2o4::LocalWorld` -- The default world implementation,
+- `n2o5::LocalWorld` -- The default world implementation,
   working on the local file system and process space.
 - (Test only) `tests/mock.rs::MockWorld` -- A mocked world for testing.
 
 Databases:
 
-- `n2o4::db::in_memory::InMemoryDb` -- An in-memory database implementation,
+- `n2o5::db::in_memory::InMemoryDb` -- An in-memory database implementation,
   mainly for testing, but can be used for ephemeral builds.
-- `n2o4::db::redb::ExecRedb` -- A [`redb`][redb]-backed filesystem database implementation.
-- `n2o4_heed::ExecHeedDb` -- A [LMDB][](via [`heed`][heed])-backed filesystem database implementation.
+- `n2o5::db::redb::ExecRedb` -- A [`redb`][redb]-backed filesystem database implementation.
+- `n2o5_heed::ExecHeedDb` -- A [LMDB][](via [`heed`][heed])-backed filesystem database implementation.
 
 [redb]: https://crates.io/crates/redb
 [heed]: https://crates.io/crates/heed
@@ -53,11 +53,11 @@ Databases:
 
 ## CLI and `ninja`
 
-The `n2o4` commandline executable, located in `cli/`,
+The `n2o5` commandline executable, located in `cli/`,
 is used for testing and stressing the library.
 It contains a subset of `ninja` for testing with the library and tweaking on ergonomics.
 
-You may use it either as `n2o4 ninja [ninja_args...]`
+You may use it either as `n2o5 ninja [ninja_args...]`
 or create a symlink whose name starts with `ninja` and use it as a replacement.
 
 Unsupported features:
@@ -72,6 +72,7 @@ Unsupported features:
 
 ---
 
-N<sub>2</sub>O<sub>4</sub> is also called nitrogen tetroxide (NTO)
-when using as a propellant,
-so in theory it's also "into", just like `n2`.
+Originally this project was called `n2o4`.
+However, this name has been taken by [`n2o4`](https://crates.io/crates/n2o4),
+a binding to NASA's Core Flight System, which definitely deserves the name.
+It has thus been renamed to `n2o5`.

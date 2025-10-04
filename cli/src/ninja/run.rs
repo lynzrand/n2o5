@@ -1,6 +1,6 @@
 use std::{collections::HashSet, path::Path};
 
-use n2o4::graph::BuildId;
+use n2o5::graph::BuildId;
 
 use crate::ninja::model::NinjaFile;
 
