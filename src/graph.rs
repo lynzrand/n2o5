@@ -76,10 +76,17 @@ impl BuildGraph {
 /// only for checking build timestamps. You must manually add edges using
 /// [`Self::add_build_dep`] to ensure the correct build order.
 ///
-/// A consequence of this is that you can actually skip defining inputs for
-/// files you have already declared as output of preceding commands, and use the
-/// build edge instead. You still need that output file for timestamp checking,
-/// or else the build will always be considered out-of-date.
+/// Currently, you still need to declare all input and output files in the build
+/// nodes, including the input files that correspond to the output of other build
+/// nodes. This will be relaxed in the future to reduce duplication.
+//
+// FIXME: Use the following version once we are done with node shapes & implicit
+// inputs.
+//
+// A consequence of this is that you can actually skip defining inputs for
+// files you have already declared as output of preceding commands, and use the
+// build edge instead. You still need that output file for timestamp checking,
+// or else the build will always be considered out-of-date.
 #[derive(Default, Debug)]
 pub struct GraphBuilder {
     graph: BuildGraph,

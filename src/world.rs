@@ -1,3 +1,5 @@
+//! Abstractions on how the executor interacts with the outside world
+
 use std::{any::Any, path::Path, process::Command, time::SystemTime};
 
 use crate::{

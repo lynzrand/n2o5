@@ -88,11 +88,13 @@ pub trait ExecDb: Send + Sync {
     fn begin_write<'w>(&'w self) -> Box<dyn DbWriter + 'w>;
 }
 
+/// Trait for reading from the build database.
 pub trait DbReader {
     fn get_build_info(&self, hash: BuildHash) -> Option<BuildInfo>;
     fn get_file_info(&self, path: &Path) -> Option<FileInfo>;
 }
 
+/// Trait for writing to the build database.
 pub trait DbWriter {
     fn set_build_info(&mut self, hash: BuildHash, info: BuildInfo);
     fn invalidate_build(&mut self, hash: BuildHash);
