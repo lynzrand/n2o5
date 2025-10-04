@@ -29,6 +29,28 @@ instead of writing the artifacts they generate and parsing it back to the graph.
 In particular, `n2o4` is not optimized for Ninja compatibility,
 and aims for better ergonomics as a library & in-memory graph usage.
 
+## World and Database
+
+`n2o4` provides different world (file system and process spawning) and build database implementations
+to accommodate different build environments and needs.
+
+Worlds:
+
+- `n2o4::LocalWorld` -- The default world implementation,
+  working on the local file system and process space.
+- (Test only) `tests/mock.rs::MockWorld` -- A mocked world for testing.
+
+Databases:
+
+- `n2o4::db::in_memory::InMemoryDb` -- An in-memory database implementation,
+  mainly for testing, but can be used for ephemeral builds.
+- `n2o4::db::redb::ExecRedb` -- A [`redb`][redb]-backed filesystem database implementation.
+- `n2o4_heed::ExecHeedDb` -- A [LMDB][](via [`heed`][heed])-backed filesystem database implementation.
+
+[redb]: https://crates.io/crates/redb
+[heed]: https://crates.io/crates/heed
+[LMDB]: https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database
+
 ## CLI and `ninja`
 
 The `n2o4` commandline executable, located in `cli/`,
@@ -37,6 +59,12 @@ It contains a subset of `ninja` for testing with the library and tweaking on erg
 
 You may use it either as `n2o4 ninja [ninja_args...]`
 or create a symlink whose name starts with `ninja` and use it as a replacement.
+
+Unsupported features:
+
+- Dry run
+- Printing commands executed
+- Advanced `ninja` features like pools, response files, depfile/dyndep, etc.
 
 # License
 
