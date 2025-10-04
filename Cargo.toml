@@ -19,7 +19,7 @@ tracing = "0.1.41"
 twox-hash = "2.1.2"
 
 [workspace]
-members = [".", "cli"]
+members = [".", "cli", "crates/n2o4-heed"]
 
 [workspace.dependencies]
 n2o4 = { path = "." }
