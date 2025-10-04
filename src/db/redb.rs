@@ -37,7 +37,7 @@ impl ExecDb for ExecRedb {
         0 // TODO
     }
 
-    fn reset(&mut self) {
+    fn reset(&self) {
         todo!()
     }
 

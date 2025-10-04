@@ -48,7 +48,7 @@ impl ExecDb for InMemoryDb {
         self.inner.read().unwrap().schema_version
     }
 
-    fn reset(&mut self) {
+    fn reset(&self) {
         let mut inner = self.inner.write().unwrap();
         inner.build_info.clear();
         inner.file_info.clear();

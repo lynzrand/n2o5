@@ -41,7 +41,7 @@ pub fn run(cmd: &NinjaSubcommand) -> anyhow::Result<()> {
     let cfg = ExecConfig { parallelism };
 
     // Build executor
-    let mut exec = Executor::new(&cfg, &converted.graph, Box::new(db), &());
+    let mut exec = Executor::new(&cfg, &converted.graph, &db, &());
 
     // Resolve targets (skip dry-run; we always run)
     let wanted = run::resolve_targets_to_build_ids(&cmd.targets, &parsed, &converted);

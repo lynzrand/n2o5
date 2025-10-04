@@ -75,10 +75,11 @@ pub struct BuildInfo {
 pub trait ExecDb: Send + Sync {
     /// Get the schema version of stored data.
     fn get_schema_version(&self) -> u64;
+
     /// Destroy all stored data and reset to an empty state.
     ///
     /// This might be used on schema version mismatch.
-    fn reset(&mut self);
+    fn reset(&self);
 
     /// Begin a read transaction. The database may block during this process.
     fn begin_read<'r>(&'r self) -> Box<dyn DbReader + 'r>;

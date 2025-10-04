@@ -20,17 +20,15 @@ mod mock;
 
 // Helper functions
 
-fn declare_db() -> (InMemoryDb, Box<dyn ExecDb>) {
-    let db = InMemoryDb::default();
-    let db_box: Box<dyn ExecDb> = Box::new(db.clone());
-    (db, db_box)
+fn declare_db() -> InMemoryDb {
+    InMemoryDb::default()
 }
 
 fn run_graph(
     world: &MockWorld,
     graph: &n2o4::graph::BuildGraph,
     cfg: ExecConfig,
-    db: Box<dyn ExecDb>,
+    db: &dyn ExecDb,
     want: impl IntoIterator<Item = n2o4::graph::BuildId>,
 ) -> Vec<String> {
     let mut exec = Executor::with_world(&cfg, graph, db, world, &());
@@ -159,9 +157,9 @@ macro_rules! mock_graph {
 fn test_nothing() {
     let cfg = ExecConfig::default();
     let cx = mock_graph! {};
-    let db = Box::new(InMemoryDb::default());
+    let db = InMemoryDb::default();
     let world = MockWorld::new();
-    let mut executor = Executor::with_world(&cfg, &cx.graph, db, &world, &());
+    let mut executor = Executor::with_world(&cfg, &cx.graph, &db, &world, &());
     executor.run().unwrap();
 }
 
@@ -175,12 +173,12 @@ fn test_single_node_outdated_succeeded() {
     let world = MockWorld::new();
     touch_all(&world, &["in.txt"]);
 
-    let (db_read, db_box) = declare_db();
+    let db = declare_db();
 
-    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.a]);
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.a]);
     assert_eq!(log, vec!["A"]);
 
-    assert_db_has(&db_read, "out.txt");
+    assert_db_has(&db, "out.txt");
 }
 
 // 2) Single node: Outdated -> Failed; assert exec log and file info invalidated
@@ -194,12 +192,12 @@ fn test_single_node_outdated_failed() {
     touch_all(&world, &["in.txt"]);
     set_fail_on(&world, "A");
 
-    let (db_read, db_box) = declare_db();
+    let db = declare_db();
 
-    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.a]);
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.a]);
     assert_eq!(log, vec!["A"]);
 
-    assert_db_missing(&db_read, "out.txt");
+    assert_db_missing(&db, "out.txt");
 }
 
 // 3) Single node: UpToDate on second run (no execution)
@@ -212,14 +210,13 @@ fn test_single_node_up_to_date() {
     let world = MockWorld::new();
     touch_all(&world, &["in.txt"]);
 
-    let (db_read, db_box) = declare_db();
+    let db = declare_db();
 
     // First run to populate DB
-    let _ = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.a]);
+    let _ = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.a]);
 
     // Second run should be UpToDate and not execute the command
-    let db_box2: Box<dyn n2o4::db::ExecDb> = Box::new(db_read.clone());
-    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box2, [cx.a]);
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.a]);
     assert!(
         log.is_empty(),
         "Expected no execution on UpToDate, got {:?}",
@@ -227,7 +224,7 @@ fn test_single_node_up_to_date() {
     );
 
     // File info should still exist
-    assert_db_has(&db_read, "out.txt");
+    assert_db_has(&db, "out.txt");
 }
 
 // 4) Linear , dependency: A -> B success path
@@ -241,14 +238,14 @@ fn test_linear_dependency_success() {
     let world = MockWorld::new();
     touch_all(&world, &["a.in", "a.out"]);
 
-    let (db_read, db_box) = declare_db();
+    let db = declare_db();
 
-    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.b]);
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.b]);
 
     assert_eq!(log.len(), 2);
     assert_order(&log, "A", "B");
 
-    assert_db_has(&db_read, "b.out");
+    assert_db_has(&db, "b.out");
 }
 
 // 5) Failure propagation: A Failed -> B Skipped (B not executed)
@@ -263,13 +260,13 @@ fn test_dependency_failure_propagation_skipped() {
     touch_all(&world, &["a.in"]);
     set_fail_on(&world, "A");
 
-    let (db_read, db_box) = declare_db();
+    let db = declare_db();
 
-    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.b]);
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.b]);
     assert_eq!(log, vec!["A"]);
 
-    assert_db_missing(&db_read, "a.out");
-    assert_db_missing(&db_read, "b.out");
+    assert_db_missing(&db, "a.out");
+    assert_db_missing(&db, "b.out");
 }
 
 // 6) Multiple inputs gate: B executes only after A and C succeed
@@ -284,14 +281,14 @@ fn test_multi_input_gatekeeping() {
     let world = MockWorld::new();
     touch_all(&world, &["a.in", "c.in", "a.out", "c.out"]);
 
-    let (db_read, db_box) = declare_db();
+    let db = declare_db();
 
-    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.b]);
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.b]);
     assert_eq!(log.len(), 3);
     assert_order(&log, "A", "B");
     assert_order(&log, "C", "B");
 
-    assert_db_has(&db_read, "b.out");
+    assert_db_has(&db, "b.out");
 }
 
 // 7) Skipped chain propagation: A Failed -> B Skipped -> C Skipped (B , depends on A, C , depends on B)
@@ -307,14 +304,14 @@ fn test_skipped_chain_propagation() {
     touch_all(&world, &["a.in"]);
     set_fail_on(&world, "A");
 
-    let (db_read, db_box) = declare_db();
+    let db = declare_db();
 
-    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.c]);
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.c]);
     assert_eq!(log, vec!["A"]);
 
-    assert_db_missing(&db_read, "a.out");
-    assert_db_missing(&db_read, "b.out");
-    assert_db_missing(&db_read, "c.out");
+    assert_db_missing(&db, "a.out");
+    assert_db_missing(&db, "b.out");
+    assert_db_missing(&db, "c.out");
 }
 
 // 8) Optional: parallelism=1 with two leaves; sequential execution (no strict order asserted)
@@ -328,13 +325,13 @@ fn test_parallelism_one_two_leaves() {
     let world = MockWorld::new();
     touch_all(&world, &["d.in", "e.in"]);
 
-    let (_db_read, db_box) = declare_db();
+    let db = declare_db();
 
     let log = run_graph(
         &world,
         &cx.graph,
         ExecConfig { parallelism: 1 },
-        db_box,
+        &db,
         [cx.d, cx.e],
     );
     assert_eq!(log.len(), 2);
@@ -353,11 +350,11 @@ fn test_failure_midway_propagation() {
     touch_all(&world, &["a.in"]);
     set_fail_on(&world, "B");
 
-    let (db_read, db_box) = declare_db();
+    let db = declare_db();
 
-    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.c]);
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.c]);
     assert_eq!(log, vec!["A", "B"]);
-    assert_db_has(&db_read, "a.out");
+    assert_db_has(&db, "a.out");
 }
 
 #[test]
@@ -370,14 +367,13 @@ fn test_up_to_date() {
     let world = MockWorld::new();
     touch_all(&world, &["a.in"]);
 
-    let (db_read, db_box) = declare_db();
+    let db = declare_db();
 
     // First run to populate DB
-    let _ = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.b]);
+    let _ = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.b]);
 
     // Second run should be UpToDate and not execute the command
-    let db_box2: Box<dyn n2o4::db::ExecDb> = Box::new(db_read.clone());
-    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box2, [cx.b]);
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.b]);
     assert!(
         log.is_empty(),
         "Expected no execution on UpToDate, got {:?}",
@@ -385,7 +381,7 @@ fn test_up_to_date() {
     );
 
     // File info should still exist
-    assert_db_has(&db_read, "b.out");
+    assert_db_has(&db, "b.out");
 }
 
 fn set_fail_on_any(world: &MockWorld, exec_names: &[&str]) {
@@ -412,15 +408,15 @@ fn test_two_dependency_failures_skip_consumer() {
     touch_all(&world, &["a.in", "b.in"]);
     set_fail_on_any(&world, &["A", "B"]);
 
-    let (db_read, db_box) = declare_db();
+    let db = declare_db();
 
     // Both A and B should have failed, C skipped
     // No error should be raised
-    let _log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.c]);
+    let _log = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.c]);
 
-    assert_db_missing(&db_read, "a.out");
-    assert_db_missing(&db_read, "b.out");
-    assert_db_missing(&db_read, "c.out");
+    assert_db_missing(&db, "a.out");
+    assert_db_missing(&db, "b.out");
+    assert_db_missing(&db, "c.out");
 }
 
 #[test]
@@ -432,23 +428,22 @@ fn test_touch_input_after_first_build_triggers_rebuild() {
     let world = MockWorld::new();
     touch_all(&world, &["in.txt"]);
 
-    let (db_read, db_box) = declare_db();
+    let db = declare_db();
 
     // First run to populate DB
-    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.a]);
-    assert_db_has(&db_read, "out.txt");
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.a]);
+    assert_db_has(&db, "out.txt");
     assert_eq!(log, vec!["A"]);
 
     // Touch input after the first build
     world.touch_file("in.txt");
 
     // Second run should rebuild due to input mtime > last_start
-    let db_box2: Box<dyn n2o4::db::ExecDb> = Box::new(db_read.clone());
-    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box2, [cx.a]);
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.a]);
     assert_eq!(log, vec!["A"]);
 
     // File info should still exist
-    assert_db_has(&db_read, "out.txt");
+    assert_db_has(&db, "out.txt");
 }
 
 #[test]
@@ -461,35 +456,32 @@ fn test_change_command_then_change_back_reuses_same_db() {
     let world = MockWorld::new();
     touch_all(&world, &["in.txt"]);
 
-    let (db_read, db_box) = declare_db();
-    let _ = run_graph(&world, &cx1.graph, ExecConfig::default(), db_box, [cx1.a]);
+    let db = declare_db();
+    let _ = run_graph(&world, &cx1.graph, ExecConfig::default(), &db, [cx1.a]);
 
     // Change command to X, same inputs/outputs, reuse the same DB
     let cx2 = mock_graph! {
         a: "out.txt" => X("in.txt");
     };
-    let db_box2: Box<dyn n2o4::db::ExecDb> = Box::new(db_read.clone());
-    let log2 = run_graph(&world, &cx2.graph, ExecConfig::default(), db_box2, [cx2.a]);
+    let log2 = run_graph(&world, &cx2.graph, ExecConfig::default(), &db, [cx2.a]);
     assert_eq!(log2, vec!["X"]);
-    assert_db_has(&db_read, "out.txt");
+    assert_db_has(&db, "out.txt");
 
     // Change command back to A and build again with the same DB
     let cx3 = mock_graph! {
         a: "out.txt" => A("in.txt");
     };
-    let db_box3: Box<dyn n2o4::db::ExecDb> = Box::new(db_read.clone());
-    let log3 = run_graph(&world, &cx3.graph, ExecConfig::default(), db_box3, [cx3.a]);
+    let log3 = run_graph(&world, &cx3.graph, ExecConfig::default(), &db, [cx3.a]);
     assert_eq!(log3, vec!["A"]);
-    assert_db_has(&db_read, "out.txt");
+    assert_db_has(&db, "out.txt");
 
     // Another build with A should be UpToDate (no execution)
     let cx4 = mock_graph! {
         a: "out.txt" => A("in.txt");
     };
-    let db_box4: Box<dyn n2o4::db::ExecDb> = Box::new(db_read.clone());
-    let log4 = run_graph(&world, &cx4.graph, ExecConfig::default(), db_box4, [cx3.a]);
+    let log4 = run_graph(&world, &cx4.graph, ExecConfig::default(), &db, [cx3.a]);
     assert_eq!(log4.len(), 0);
-    assert_db_has(&db_read, "out.txt");
+    assert_db_has(&db, "out.txt");
 }
 
 #[test]
@@ -501,22 +493,21 @@ fn test_remove_output_file_after_successful_build() {
     let world = MockWorld::new();
     touch_all(&world, &["in.txt"]);
 
-    let (db_read, db_box) = declare_db();
+    let db = declare_db();
 
     // First run to populate DB
-    let _ = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.a]);
-    assert_db_has(&db_read, "out.txt");
+    let _ = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.a]);
+    assert_db_has(&db, "out.txt");
 
     // Simulate removing the output file from the world
     world.remove_file("out.txt");
 
-    let db_box2: Box<dyn n2o4::db::ExecDb> = Box::new(db_read.clone());
-    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box2, [cx.a]);
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.a]);
     // Command should re-execute to regenerate the missing output
     assert_eq!(log, vec!["A"]);
 
     // DB still tracks the file info
-    assert_db_has(&db_read, "out.txt");
+    assert_db_has(&db, "out.txt");
 }
 
 #[test]
@@ -527,14 +518,14 @@ fn test_nonexisting_input_file_fails_without_execution() {
 
     let world = MockWorld::new();
 
-    let (db_read, db_box) = declare_db();
+    let db = declare_db();
 
-    let log = run_graph(&world, &cx.graph, ExecConfig::default(), db_box, [cx.a]);
+    let log = run_graph(&world, &cx.graph, ExecConfig::default(), &db, [cx.a]);
     assert!(
         log.is_empty(),
         "Expected no execution when input file is missing, got {:?}",
         log
     );
 
-    assert_db_missing(&db_read, "out.txt");
+    assert_db_missing(&db, "out.txt");
 }

@@ -76,7 +76,7 @@ struct SharedState<'a> {
     cfg: &'a ExecConfig,
     graph: &'a BuildGraph,
     world: &'a dyn World,
-    db: Box<dyn ExecDb>,
+    db: &'a dyn ExecDb,
     pool: rayon::ThreadPool,
 
     user_state: &'a (dyn Any + Send + Sync),
@@ -132,7 +132,7 @@ impl<'a> Executor<'a> {
     pub fn new(
         cfg: &'a ExecConfig,
         graph: &'a BuildGraph,
-        db: Box<dyn ExecDb>,
+        db: &'a dyn ExecDb,
         user_state: &'a (dyn Any + Send + Sync),
     ) -> Self {
         Self::with_world(cfg, graph, db, &LOCAL_WORLD, user_state)
@@ -142,7 +142,7 @@ impl<'a> Executor<'a> {
     pub fn with_world(
         cfg: &'a ExecConfig,
         graph: &'a BuildGraph,
-        db: Box<dyn ExecDb>,
+        db: &'a dyn ExecDb,
         world: &'a dyn World,
         user_state: &'a (dyn Any + Send + Sync),
     ) -> Self {
@@ -588,7 +588,7 @@ fn invalidate_build(db: &dyn ExecDb, graph: &BuildGraph, build: &BuildNode, buil
 /// Runs the build node
 fn run_build(state: Arc<SharedState<'_>>, id: BuildId, report: mpsc::Sender<BuildNodeResult>) {
     let graph = state.graph;
-    let db = &*state.db;
+    let db = state.db;
 
     let build = graph.lookup_build(id).expect("Node should exist");
 
