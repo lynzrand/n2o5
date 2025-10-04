@@ -31,8 +31,6 @@ and aims for better ergonomics as a library & in-memory graph usage.
 
 ## CLI and `ninja`
 
-> The `n2o4` CLI has a working ninja parser, but hasn't been wired to the library yet.
-
 The `n2o4` commandline executable, located in `cli/`,
 is used for testing and stressing the library.
 It contains a subset of `ninja` for testing with the library and tweaking on ergonomics.
