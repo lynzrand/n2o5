@@ -6,6 +6,7 @@ use std::{
     error::Error,
     ffi::OsStr,
     fmt::Debug,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -223,6 +224,30 @@ impl Debug for BuildMethod {
                     .finish()
             }
             Self::Phony => f.debug_tuple("Phony").finish(),
+        }
+    }
+}
+
+impl BuildMethod {
+    pub fn write_human_readable(&self, mut w: impl Write) -> std::io::Result<()> {
+        match self {
+            BuildMethod::SubCommand(cmd) => {
+                let quoted_cmd =
+                    shlex::bytes::try_quote(cmd.executable.as_os_str().as_encoded_bytes())
+                        .map_err(|x| std::io::Error::new(std::io::ErrorKind::InvalidFilename, x))?;
+                w.write_all(&quoted_cmd)?;
+
+                for arg in &cmd.args {
+                    w.write_all(b" ")?;
+                    let quoted_arg = shlex::bytes::try_quote(arg.as_encoded_bytes())
+                        .map_err(|x| std::io::Error::new(std::io::ErrorKind::InvalidData, x))?;
+                    w.write_all(&quoted_arg)?;
+                }
+
+                Ok(())
+            }
+            BuildMethod::Callback(smol_str, _) => write!(w, "<callback: {}>", smol_str),
+            BuildMethod::Phony => write!(w, "<phony>"),
         }
     }
 }

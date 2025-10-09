@@ -8,6 +8,7 @@ use crate::{cli::NinjaSubcommand, ninja::parser::ParseSource};
 
 use anyhow::{Context, anyhow};
 use n2o5::exec::{ExecConfig, Executor};
+use n2o5::progress::dumb::DumbConsoleProgress;
 
 static NINJA_DEFAULT_FILENAME: &str = "build.ninja";
 static NINJA_DB_FILENAME: &str = "n2o5_ninja.db";
@@ -41,7 +42,8 @@ pub fn run(cmd: &NinjaSubcommand) -> anyhow::Result<()> {
     let cfg = ExecConfig { parallelism };
 
     // Build executor
-    let mut exec = Executor::new(&cfg, &converted.graph, &db, &());
+    let progress = DumbConsoleProgress;
+    let mut exec = Executor::new(&cfg, &converted.graph, &db, &progress, &());
 
     // Resolve targets (skip dry-run; we always run)
     let wanted = run::resolve_targets_to_build_ids(&cmd.targets, &parsed, &converted);

@@ -15,6 +15,7 @@ use tracing::{debug, info, warn};
 use crate::{
     db::{BuildHash, BuildInfo, ExecDb, InputHash},
     graph::{BuildGraph, BuildId, BuildNode, FileId, hash_build, hash_input_set},
+    progress::{Progress, ProgressConfig, ProgressStatus},
     world::{LOCAL_WORLD, World},
 };
 
@@ -78,6 +79,7 @@ struct SharedState<'a> {
     world: &'a dyn World,
     db: &'a dyn ExecDb,
     pool: rayon::ThreadPool,
+    progress: &'a dyn Progress,
 
     user_state: &'a (dyn Any + Send + Sync),
 }
@@ -133,9 +135,10 @@ impl<'a> Executor<'a> {
         cfg: &'a ExecConfig,
         graph: &'a BuildGraph,
         db: &'a dyn ExecDb,
+        progress: &'a dyn Progress,
         user_state: &'a (dyn Any + Send + Sync),
     ) -> Self {
-        Self::with_world(cfg, graph, db, &LOCAL_WORLD, user_state)
+        Self::with_world_and_progress(cfg, graph, db, &LOCAL_WORLD, progress, user_state)
     }
 
     /// Create a new executor with a custom [`World`] implementation.
@@ -144,6 +147,19 @@ impl<'a> Executor<'a> {
         graph: &'a BuildGraph,
         db: &'a dyn ExecDb,
         world: &'a dyn World,
+        progress: &'a dyn Progress,
+        user_state: &'a (dyn Any + Send + Sync),
+    ) -> Self {
+        Self::with_world_and_progress(cfg, graph, db, world, progress, user_state)
+    }
+
+    /// Create a new executor with a custom [`World`] and [`Progress`] implementation.
+    pub fn with_world_and_progress(
+        cfg: &'a ExecConfig,
+        graph: &'a BuildGraph,
+        db: &'a dyn ExecDb,
+        world: &'a dyn World,
+        progress: &'a dyn Progress,
         user_state: &'a (dyn Any + Send + Sync),
     ) -> Self {
         let pool = rayon::ThreadPoolBuilder::new()
@@ -157,6 +173,7 @@ impl<'a> Executor<'a> {
             db,
             world,
             pool,
+            progress,
             user_state,
         };
         Self {
@@ -238,6 +255,11 @@ impl<'a> Executor<'a> {
     pub fn run(&mut self) -> Result<(), std::io::Error> {
         self.build_started = true;
 
+        // Prepare progress
+        self.state.progress.prepare(&ProgressConfig {
+            max_threads: Some(self.state.cfg.parallelism),
+        });
+
         let state = self.state.clone();
         let (tx, mut rx) = mpsc::channel::<BuildNodeResult>();
         state
@@ -247,6 +269,9 @@ impl<'a> Executor<'a> {
         // threads in the pool can finish sending messages.
         // TODO: collect and process any remaining messages
         drop(rx);
+
+        // Finish progress
+        self.state.progress.finish();
 
         Ok(())
     }
@@ -380,7 +405,22 @@ impl<'a> Executor<'a> {
             }
         }
 
+        // Report node completion with final progress status
+        let status = self.status();
+        self.state
+            .progress
+            .build_finished(self.state.graph, id, stat.is_successful(), &status);
+
         Ok(())
+    }
+
+    fn status(&self) -> ProgressStatus {
+        ProgressStatus {
+            total: self.builds.len(),
+            started: self.running + self.finished,
+            done: self.finished,
+            failed: self.failed,
+        }
     }
 
     fn start_build<'scope>(
@@ -392,6 +432,12 @@ impl<'a> Executor<'a> {
         'a: 'scope,
     {
         info!(?node, "Starting build");
+
+        // Notify progress that a build has started with current status
+        let status = self.status();
+        self.state
+            .progress
+            .build_started(self.state.graph, node, &status);
 
         let state = self.state.clone();
         self.builds.get_mut(&node).expect("Build should exist").kind = BuildStatusKind::Started;

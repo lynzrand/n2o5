@@ -1,26 +1,38 @@
 //! Progress reporting and output capture facility
 
-use crate::BuildId;
+pub mod dumb;
+pub mod noop;
+
+use crate::{BuildGraph, BuildId};
 
 /// Trait for reporting build progress and capturing output.
 ///
 /// Methods of this type may be called from multiple threads, so implementations
 /// must be thread-safe.
+///
+// TODO: Should we pass the graph only once in prepare, or have a separate
+// factory type that creates Progress instances for a given graph instead?
 pub trait Progress: Send + Sync {
     /// Prepare the progress reporter with the given configuration.
     fn prepare(&self, config: &ProgressConfig);
 
     /// Callback when a build starts.
-    fn build_started(&self, id: BuildId);
+    fn build_started(&self, graph: &BuildGraph, id: BuildId, status: &ProgressStatus);
 
     /// Callback when a chunk of stdout is produced by a build.
-    fn stdout_chunk(&self, id: BuildId, chunk: &[u8]);
+    fn stdout_line(&self, graph: &BuildGraph, id: BuildId, chunk: &[u8]);
 
     /// Callback when a build finishes.
-    fn build_finished(&self, id: BuildId, success: bool);
+    fn build_finished(
+        &self,
+        graph: &BuildGraph,
+        id: BuildId,
+        success: bool,
+        status: &ProgressStatus,
+    );
 
-    /// Callback when a build is skipped.
-    fn status_update(&self, status: &ProgressStatus);
+    /// Called when a progress session has finished
+    fn finish(&self);
 }
 
 /// A config for the progress reporter.
@@ -36,6 +48,8 @@ pub struct ProgressConfig {
 pub struct ProgressStatus {
     /// The total number of builds to runs
     pub total: usize,
+    /// The number of builds that have started, including those that are finished.
+    pub started: usize,
     /// The total number of builds finished, either successfully, unsuccessfully
     /// or skipped.
     pub done: usize,

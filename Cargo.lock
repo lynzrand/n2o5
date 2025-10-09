@@ -697,6 +697,7 @@ dependencies = [
  "redb",
  "serde",
  "serde_bytes",
+ "shlex",
  "smol_str",
  "test-log",
  "thiserror",

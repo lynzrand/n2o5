@@ -4,6 +4,7 @@
 //! it's acceptable.
 
 use n2o5::db::ExecDb;
+use n2o5::progress::noop::NOOP_PROGRESS;
 use n2o5::{
     db::in_memory::InMemoryDb,
     exec::{BuildStatusKind, ExecConfig, Executor},
@@ -31,7 +32,7 @@ fn run_graph(
     db: &dyn ExecDb,
     want: impl IntoIterator<Item = n2o5::graph::BuildId>,
 ) -> Vec<String> {
-    let mut exec = Executor::with_world(&cfg, graph, db, world, &());
+    let mut exec = Executor::with_world(&cfg, graph, db, world, &NOOP_PROGRESS, &());
     exec.want(want);
     exec.run().unwrap();
     world
@@ -159,7 +160,7 @@ fn test_nothing() {
     let cx = mock_graph! {};
     let db = InMemoryDb::default();
     let world = MockWorld::new();
-    let mut executor = Executor::with_world(&cfg, &cx.graph, &db, &world, &());
+    let mut executor = Executor::with_world(&cfg, &cx.graph, &db, &world, &NOOP_PROGRESS, &());
     executor.run().unwrap();
 }
 
