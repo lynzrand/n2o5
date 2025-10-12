@@ -29,23 +29,28 @@ instead of writing the artifacts they generate and parsing it back to the graph.
 In particular, `n2o5` is not optimized for Ninja compatibility,
 and aims for better ergonomics as a library & in-memory graph usage.
 
-## World and Database
+## Overridable
 
-`n2o5` provides different world (file system and process spawning) and build database implementations
+`n2o5` provides overridable implementations
 to accommodate different build environments and needs.
 
-Worlds:
+Worlds (file system and process spawning):
 
 - `n2o5::LocalWorld` -- The default world implementation,
   working on the local file system and process space.
 - (Test only) `tests/mock.rs::MockWorld` -- A mocked world for testing.
 
-Databases:
+Databases (build state cache):
 
 - `n2o5::db::in_memory::InMemoryDb` -- An in-memory database implementation,
   mainly for testing, but can be used for ephemeral builds.
 - `n2o5::db::redb::ExecRedb` -- A [`redb`][redb]-backed filesystem database implementation.
 - `n2o5_heed::ExecHeedDb` -- A [LMDB][](via [`heed`][heed])-backed filesystem database implementation. (Untested)
+
+Progress (build status reporting):
+
+- `n2o5::progress::noop::NoopProgress` -- Does nothing at all.
+- `n2o5::progress::dumb::DumbConsoleProgress` -- An append-only console progress reporter.
 
 [redb]: https://crates.io/crates/redb
 [heed]: https://crates.io/crates/heed
