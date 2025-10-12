@@ -5,8 +5,7 @@ use std::{
     borrow::Cow,
     error::Error,
     ffi::OsStr,
-    fmt::Debug,
-    io::Write,
+    fmt::{Debug, Display, Write},
     path::{Path, PathBuf},
 };
 
@@ -188,6 +187,16 @@ pub struct BuildNode {
     // pub restat: bool,
 }
 
+impl BuildNode {
+    /// Return a formatter that displays the build command in a human-readable way.
+    ///
+    /// If the build node has a description, it will be displayed. Otherwise,
+    /// it will try to display the command being executed.
+    pub fn human_readable(&self) -> HumanBuildFormatter<'_> {
+        HumanBuildFormatter(self)
+    }
+}
+
 /// A callback to invoke as a build step.
 ///
 /// It should be a function that accepts the build environment (as [`Any`]),
@@ -230,25 +239,39 @@ impl Debug for BuildMethod {
 }
 
 impl BuildMethod {
-    pub fn write_human_readable(&self, mut w: impl Write) -> std::io::Result<()> {
+    pub fn write_human_readable(&self, mut w: impl Write) -> std::fmt::Result {
         match self {
             BuildMethod::SubCommand(cmd) => {
                 let quoted_cmd =
                     shlex::bytes::try_quote(cmd.executable.as_os_str().as_encoded_bytes())
-                        .map_err(|x| std::io::Error::new(std::io::ErrorKind::InvalidFilename, x))?;
-                w.write_all(&quoted_cmd)?;
+                        .map_err(|_| std::fmt::Error)?;
+                let quoted_cmd = String::from_utf8_lossy(&quoted_cmd);
+                w.write_str(&quoted_cmd)?;
 
                 for arg in &cmd.args {
-                    w.write_all(b" ")?;
+                    w.write_char(' ')?;
                     let quoted_arg = shlex::bytes::try_quote(arg.as_encoded_bytes())
-                        .map_err(|x| std::io::Error::new(std::io::ErrorKind::InvalidData, x))?;
-                    w.write_all(&quoted_arg)?;
+                        .map_err(|_| std::fmt::Error)?;
+                    let quoted_arg = String::from_utf8_lossy(&quoted_arg);
+                    w.write_str(&quoted_arg)?;
                 }
 
                 Ok(())
             }
             BuildMethod::Callback(smol_str, _) => write!(w, "<callback: {}>", smol_str),
             BuildMethod::Phony => write!(w, "<phony>"),
+        }
+    }
+}
+
+pub struct HumanBuildFormatter<'a>(&'a BuildNode);
+
+impl Display for HumanBuildFormatter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(desc) = &self.0.description {
+            f.write_str(desc)
+        } else {
+            self.0.command.write_human_readable(f)
         }
     }
 }

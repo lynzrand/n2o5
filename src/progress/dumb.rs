@@ -17,10 +17,7 @@ impl Progress for DumbConsoleProgress {
     ) {
         print!("[{}/{}] ", status.started + 1, status.total);
         let cmd = graph.lookup_build(id).expect("invalid build id");
-        cmd.command
-            .write_human_readable(&mut std::io::stdout())
-            .unwrap();
-        println!();
+        println!("{}", cmd.human_readable());
     }
 
     fn stdout_line(&self, _graph: &crate::BuildGraph, _id: crate::BuildId, chunk: &[u8]) {

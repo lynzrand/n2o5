@@ -43,15 +43,8 @@ impl Progress for FancyConsoleProgress {
         status: &super::ProgressStatus,
     ) {
         self.update_progress(status);
-        let mut human_cmd = vec![];
-        graph
-            .lookup_build(id)
-            .expect("invalid build id")
-            .command
-            .write_human_readable(&mut human_cmd)
-            .expect("Write to string cannot fail");
-        let human_cmd = String::from_utf8_lossy(&human_cmd);
-        self.progress.set_message(human_cmd.into_owned());
+        let cmd = graph.lookup_build(id).expect("invalid build id");
+        self.progress.set_message(cmd.human_readable().to_string());
     }
 
     fn stdout_line(&self, _graph: &crate::BuildGraph, _id: crate::BuildId, chunk: &[u8]) {
