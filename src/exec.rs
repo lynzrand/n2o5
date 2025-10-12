@@ -296,8 +296,14 @@ impl<'a> Executor<'a> {
                 "Run loop iteration"
             );
 
-            // Start all pending nodes
-            while let Some(val) = self.pending.pop() {
+            // Start all pending nodes while we can
+            //
+            // Since this will be called every time a build finishes, and only
+            // a finished build can make space for a new build to run, this will
+            // eventually start all nodes that should be started.
+            while self.running < self.state.cfg.parallelism
+                && let Some(val) = self.pending.pop()
+            {
                 self.start_build(pool, tx.clone(), val);
             }
 
