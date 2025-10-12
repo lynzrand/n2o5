@@ -138,6 +138,7 @@ macro_rules! mock_graph {
                     ins: __ins,
                     outs: __outs,
                     // restat: false,
+                    description: Some(stringify!($cmd).into()),
                 };
                 let __build_id = __gb.add_build(__build);
                 let $id = __build_id;

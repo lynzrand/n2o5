@@ -76,6 +76,10 @@ fn translate_build(ctx: &mut ConvertCtx, build: &Build) {
         command: BuildMethod::SubCommand(cmd),
         ins: ins.clone(),
         outs: outs.clone(),
+        description: build
+            .description
+            .as_ref()
+            .map(|x| x.as_ref().to_string().into()),
     };
     let id = ctx.builder.add_build(node);
 

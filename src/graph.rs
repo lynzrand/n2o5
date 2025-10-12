@@ -184,6 +184,7 @@ pub struct BuildNode {
     pub command: BuildMethod,
     pub ins: Vec<FileId>,
     pub outs: Vec<FileId>,
+    pub description: Option<Cow<'static, str>>,
     // pub restat: bool,
 }
 
