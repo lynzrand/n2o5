@@ -1,6 +1,9 @@
 //! Progress reporting and output capture facility
 
+#[cfg(feature = "progress-dumb")]
 pub mod dumb;
+#[cfg(feature = "progress-fancy")]
+pub mod fancy;
 pub mod noop;
 
 use crate::{BuildGraph, BuildId};

@@ -21,9 +21,14 @@ shlex = "1.3.0"
 redb = { optional = true, version = "3.0.1" }
 postcard = { optional = true, version = "1.1.3", features = ["use-std"] }
 
+# Dependencies for a fancy progress bar
+indicatif = { optional = true, version = "0.18.0" }
+
 [features]
-default = ["db-redb"]
+default = ["db-redb", "progress-fancy", "progress-dumb"]
 db-redb = ["redb", "postcard"]
+progress-fancy = ["indicatif"]
+progress-dumb = []
 
 [workspace]
 members = [".", "cli", "crates/n2o5-heed"]
