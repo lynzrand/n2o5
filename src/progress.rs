@@ -6,6 +6,14 @@ pub mod dumb;
 pub mod fancy;
 pub mod noop;
 
+pub use noop::{NOOP_PROGRESS, NoopProgress};
+
+#[cfg(feature = "progress-dumb")]
+pub use dumb::DumbConsoleProgress;
+
+#[cfg(feature = "progress-fancy")]
+pub use fancy::FancyConsoleProgress;
+
 use crate::{BuildGraph, BuildId};
 
 /// Trait for reporting build progress and capturing output.
