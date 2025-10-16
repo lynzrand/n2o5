@@ -17,7 +17,8 @@ tracing = "0.1.41"
 twox-hash = "2.1.2"
 shlex = "1.3.0"
 
-# Dependencies related to default Redb backend
+
+# Dependencies related to the Redb backend
 redb = { optional = true, version = "3.0.1" }
 postcard = { optional = true, version = "1.1.3", features = ["use-std"] }
 
@@ -25,7 +26,8 @@ postcard = { optional = true, version = "1.1.3", features = ["use-std"] }
 indicatif = { optional = true, version = "0.18.0" }
 
 [features]
-default = ["db-redb", "progress-fancy", "progress-dumb"]
+default = ["db-redb", "db-dumb", "progress-fancy", "progress-dumb"]
+db-dumb = ["postcard"]
 db-redb = ["redb", "postcard"]
 progress-fancy = ["indicatif"]
 progress-dumb = []

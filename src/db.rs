@@ -2,6 +2,8 @@
 
 pub mod in_memory;
 
+#[cfg(feature = "db-dumb")]
+pub mod dumb;
 #[cfg(feature = "db-redb")]
 pub mod redb;
 

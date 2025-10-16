@@ -33,15 +33,16 @@ impl Default for InMemoryDb {
     }
 }
 
-struct DbInner {
+#[derive(Default, serde::Deserialize, serde::Serialize)]
+pub(super) struct DbInner {
     schema_version: u64,
     build_info: HashMap<BuildHash, BuildInfo>,
     file_info: HashMap<PathBuf, FileInfo>,
 }
 
-pub struct Reader<'r>(RwLockReadGuard<'r, DbInner>);
+pub struct Reader<'r>(pub(super) RwLockReadGuard<'r, DbInner>);
 
-pub struct Writer<'w>(RwLockWriteGuard<'w, DbInner>);
+pub struct Writer<'w>(pub(super) RwLockWriteGuard<'w, DbInner>);
 
 impl ExecDb for InMemoryDb {
     fn get_schema_version(&self) -> u64 {
