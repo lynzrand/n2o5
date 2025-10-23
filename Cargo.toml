@@ -18,25 +18,25 @@ twox-hash = "2.1.2"
 shlex = "1.3.0"
 
 
-# Dependencies related to the Redb backend
-redb = { optional = true, version = "3.0.1" }
-postcard = { optional = true, version = "1.1.3", features = ["use-std"] }
+# Dependencies related to optional database backends
+postcard = { workspace = true, optional = true }
 
 # Dependencies for a fancy progress bar
 indicatif = { optional = true, version = "0.18.0" }
 
 [features]
-default = ["db-redb", "db-dumb", "progress-fancy", "progress-dumb"]
+default = ["db-dumb", "progress-fancy", "progress-dumb"]
 db-dumb = ["postcard"]
-db-redb = ["redb", "postcard"]
 progress-fancy = ["indicatif"]
 progress-dumb = []
 
 [workspace]
-members = [".", "cli", "crates/n2o5-heed"]
+members = [".", "cli", "crates/n2o5-heed", "crates/n2o5-redb"]
 
 [workspace.dependencies]
 n2o5 = { path = "." }
+n2o5-redb = { path = "crates/n2o5-redb" }
+postcard = { version = "1.1.3", features = ["use-std"] }
 
 [dev-dependencies]
 test-log = { version = "0.2.18", features = ["trace"] }

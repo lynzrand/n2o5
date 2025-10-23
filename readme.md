@@ -44,7 +44,7 @@ Databases (build state cache):
 
 - `n2o5::db::in_memory::InMemoryDb` -- An in-memory database implementation,
   mainly for testing, but can be used for ephemeral builds.
-- `n2o5::db::redb::ExecRedb` -- A [`redb`][redb]-backed filesystem database implementation.
+- `n2o5_redb::ExecRedb` -- A [`redb`][redb]-backed filesystem database implementation.
 - `n2o5_heed::ExecHeedDb` -- A [LMDB][](via [`heed`][heed])-backed filesystem database implementation. (Untested)
 
 Progress (build status reporting):

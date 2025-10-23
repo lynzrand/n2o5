@@ -743,7 +743,6 @@ dependencies = [
  "petgraph",
  "postcard",
  "rayon",
- "redb",
  "serde",
  "serde_bytes",
  "shlex",
@@ -767,6 +766,7 @@ dependencies = [
  "indexmap",
  "logos",
  "n2o5",
+ "n2o5-redb",
  "shlex",
  "smallvec",
  "thiserror",
@@ -779,6 +779,15 @@ dependencies = [
  "heed",
  "n2o5",
  "postcard",
+]
+
+[[package]]
+name = "n2o5-redb"
+version = "0.1.0"
+dependencies = [
+ "n2o5",
+ "postcard",
+ "redb",
 ]
 
 [[package]]

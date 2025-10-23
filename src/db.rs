@@ -1,11 +1,14 @@
 //! Caches the current build status onto disk.
+//!
+//! The `n2o5` crate only contains the two most simplest implementation, the
+//! [`in_memory`] database, and the [`dumb`] database. For advanced
+//! implementations that actually uses embedded database for better resistance,
+//! check out `n2o5-heed` and `n2o5-redb`.
 
 pub mod in_memory;
 
 #[cfg(feature = "db-dumb")]
 pub mod dumb;
-#[cfg(feature = "db-redb")]
-pub mod redb;
 
 use std::{
     fmt::Debug,

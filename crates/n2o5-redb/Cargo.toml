@@ -1,9 +1,9 @@
 [package]
-name = "n2o5-heed"
+name = "n2o5-redb"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-heed = "0.22.0"
 n2o5.workspace = true
 postcard.workspace = true
+redb = "3.0.1"
