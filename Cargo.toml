@@ -40,7 +40,7 @@ progress-fancy = ["indicatif"]
 progress-dumb = []
 
 [workspace]
-members = [".", "cli", "crates/n2o5-heed", "crates/n2o5-redb"]
+members = [".", "cli", "crates/n2o5-heed", "crates/n2o5-redb", "examples/*"]
 
 [workspace.dependencies]
 n2o5 = { path = "." }

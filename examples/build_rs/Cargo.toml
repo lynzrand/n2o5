@@ -1,0 +1,10 @@
+[package]
+name = "build_rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[build-dependencies]
+n2o5.workspace = true
+cc = "1.2.43"

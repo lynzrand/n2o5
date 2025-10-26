@@ -2,7 +2,7 @@
 
 use std::{
     fs::File,
-    io::{Read, Seek},
+    io::{Read, Seek, Write},
     path::Path,
     sync::{Arc, RwLock},
 };
@@ -107,6 +107,7 @@ impl Drop for DumbDbInner {
             .expect("Failed to write magic header to DumbDB");
         bincode::encode_into_std_write(&*data, &mut self.file, CFG)
             .expect("Failed to write the new database file to DumbDb");
+        self.file.flush().expect("Failed to flush file");
     }
 }
 
