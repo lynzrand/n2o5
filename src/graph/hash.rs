@@ -1,6 +1,8 @@
 //! Hashing identity of builds and their input sets.
 
-use twox_hash::XxHash3_128;
+use std::hash::Hasher;
+
+use xxhash_rust::xxh3::{Xxh3, xxh3_128};
 
 use crate::{
     db::{BuildHash, InputHash},
@@ -13,7 +15,7 @@ use crate::{
 /// e.g. the [`FileId`]s used to represent files. However, it is still
 /// sensitive to the order of output files.
 pub fn hash_build(node: &BuildNode, graph: &BuildGraph) -> BuildHash {
-    let mut hasher = XxHash3_128::new();
+    let mut hasher = Xxh3::new();
 
     match &node.command {
         BuildMethod::SubCommand(build_command) => {
@@ -40,7 +42,7 @@ pub fn hash_build(node: &BuildNode, graph: &BuildGraph) -> BuildHash {
         hasher.write(&[0]);
     }
 
-    let res = hasher.finish_128();
+    let res = hasher.digest128();
     BuildHash(res.to_be_bytes())
 }
 
@@ -55,7 +57,7 @@ pub fn hash_input_set(build_id: BuildId, graph: &BuildGraph) -> InputHash {
     // Fixed inputs
     for &file_id in &build.ins {
         let path = graph.lookup_path(file_id).expect("invalid FileId");
-        let h = XxHash3_128::oneshot(path.as_os_str().as_encoded_bytes());
+        let h = xxh3_128(path.as_os_str().as_encoded_bytes());
         acc.accumulate(h);
     }
 
@@ -64,7 +66,7 @@ pub fn hash_input_set(build_id: BuildId, graph: &BuildGraph) -> InputHash {
         let dep = graph.lookup_build(dep).expect("invalid BuildId");
         for &out in &dep.outs {
             let path = graph.lookup_path(out).expect("invalid FileId");
-            let h = XxHash3_128::oneshot(path.as_os_str().as_encoded_bytes());
+            let h = xxh3_128(path.as_os_str().as_encoded_bytes());
             acc.accumulate(h);
         }
     }
@@ -88,12 +90,12 @@ impl Acc {
     }
 
     fn finalize(&self) -> [u8; 16] {
-        let mut hasher = XxHash3_128::new();
+        let mut hasher = Xxh3::new();
         hasher.write(b"input-set\0");
         hasher.write(&self.sum.to_be_bytes());
         hasher.write(&self.xor.to_be_bytes());
         hasher.write(&self.cnt.to_be_bytes());
-        let res = hasher.finish_128();
+        let res = hasher.digest128();
         res.to_be_bytes()
     }
 }
