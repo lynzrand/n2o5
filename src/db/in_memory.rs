@@ -10,6 +10,9 @@ use crate::db::{BuildHash, BuildInfo, DbReader, ExecDb, FileInfo};
 
 use super::DbWriter;
 
+#[cfg(feature = "bincode")]
+use bincode::{Decode, Encode};
+
 #[derive(Clone)]
 pub struct InMemoryDb {
     inner: Arc<RwLock<DbInner>>,
@@ -33,7 +36,8 @@ impl Default for InMemoryDb {
     }
 }
 
-#[derive(Default, serde::Deserialize, serde::Serialize)]
+#[derive(Default)]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 pub(super) struct DbInner {
     schema_version: u64,
     build_info: HashMap<BuildHash, BuildInfo>,

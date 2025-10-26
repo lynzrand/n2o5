@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-n2o5.workspace = true
+n2o5 = { workspace = true, features = ["serde"] }
 postcard.workspace = true
 redb = "3.0.1"

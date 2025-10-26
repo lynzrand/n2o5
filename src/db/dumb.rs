@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     ExecDb,
-    db::in_memory::{self, Reader, Writer},
+    db::in_memory::{self, DbInner, Reader, Writer},
 };
 
 /// File-backed im-memory [`ExecDb`] for small tasks and single runs.
@@ -38,12 +38,19 @@ struct DumbDbInner {
     data: RwLock<in_memory::DbInner>,
 }
 
+const CFG: bincode::config::Configuration = bincode::config::standard();
+const MAGIC: &[u8; 16] = b"AZ50_NTO_0000000";
+
 impl DumbDb {
     /// Open and read the database from the given file.
     ///
     /// This operation will try to acquire the lock on the corresponding file.
     /// This operation will block until a lock can be acquired, which might be
     /// a long time if another process is using the database.
+    ///
+    /// If the DB cache file is in an invalid state, such as from an
+    /// incompatible previous version of this crate or corrupted, the file will
+    /// be unconditionally viewed as empty and cleared.
     pub fn new(path: impl AsRef<Path>) -> std::io::Result<DumbDb> {
         // Open the file first for reading the contents, and then hold the FD
         // till the end to write. Holding the lock at the meantime.
@@ -55,18 +62,33 @@ impl DumbDb {
             .open(path)?;
         file.lock()?;
 
-        let mut data = vec![];
-        file.read_to_end(&mut data)?;
+        // Verify magic
+        let mut magic_buf = [0u8; 16];
+        let Ok(_) = file.read_exact(&mut magic_buf) else {
+            // Not enough bytes for magic. Just ignore it.
+            tracing::warn!("Magic header does not exist, using empty DB");
+            return Ok(Self::create(file, Default::default()));
+        };
+        if &magic_buf != MAGIC {
+            // Invalid magic.
+            tracing::warn!("Invalid DB magic header, using empty DB");
+            return Ok(Self::create(file, Default::default()));
+        }
+
         // An error in deserialization likely means it's corrupted for
         // whatever reason. Just create a new one later.
-        let deserialized = postcard::from_bytes(&data).unwrap_or_default();
+        let deserialized = bincode::decode_from_std_read(&mut file, CFG).unwrap_or_default();
 
-        Ok(DumbDb {
+        Ok(Self::create(file, deserialized))
+    }
+
+    fn create(file: std::fs::File, data: DbInner) -> Self {
+        DumbDb {
             inner: Arc::new(DumbDbInner {
                 file,
-                data: RwLock::new(deserialized),
+                data: RwLock::new(data),
             }),
-        })
+        }
     }
 }
 
@@ -79,7 +101,11 @@ impl Drop for DumbDbInner {
             .set_len(0)
             .expect("Failed to truncate DumbDb file");
         let data = self.data.get_mut().expect("lock poisoned");
-        postcard::to_io(&data, &mut self.file)
+
+        self.file
+            .write_all(MAGIC)
+            .expect("Failed to write magic header to DumbDB");
+        bincode::encode_into_std_write(&*data, &mut self.file, CFG)
             .expect("Failed to write the new database file to DumbDb");
     }
 }

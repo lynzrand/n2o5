@@ -5,5 +5,5 @@ edition = "2024"
 
 [dependencies]
 heed = "0.22.0"
-n2o5.workspace = true
+n2o5 = { workspace = true, features = ["serde"] }
 postcard.workspace = true

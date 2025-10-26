@@ -16,14 +16,20 @@ use std::{
     time::SystemTime,
 };
 
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "bincode")]
+use bincode::{Decode, Encode};
 
 /// A hash that uniquely identifies a build command.
 ///
 /// Generate one with [`crate::graph::hash_build`].
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 #[repr(transparent)]
-pub struct BuildHash(#[serde(with = "serde_bytes")] pub [u8; 16]);
+pub struct BuildHash(#[cfg_attr(feature = "serde", serde(with = "serde_bytes"))] pub [u8; 16]);
 
 impl Debug for BuildHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -39,9 +45,11 @@ impl Debug for BuildHash {
 /// A hash of a build's input environments.
 ///
 /// Generate one with [`crate::graph::hash_input_set`].
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 #[repr(transparent)]
-pub struct InputHash(#[serde(with = "serde_bytes")] pub [u8; 16]);
+pub struct InputHash(#[cfg_attr(feature = "serde", serde(with = "serde_bytes"))] pub [u8; 16]);
 
 impl Debug for InputHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -55,7 +63,9 @@ impl Debug for InputHash {
 }
 
 /// The information associated with a specific file in the DB
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 pub struct FileInfo {
     /// The timestamp of the file when it was last checked in the build system
     pub last_seen: SystemTime,
@@ -64,7 +74,9 @@ pub struct FileInfo {
 }
 
 /// The information associated with a specific build in the DB
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 pub struct BuildInfo {
     /// The last time this build was started
     pub last_start: SystemTime,
