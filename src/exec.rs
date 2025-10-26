@@ -10,7 +10,7 @@ use std::{
 use indexmap::IndexSet;
 use petgraph::visit::Walker;
 use rayon::Scope;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, info_span, warn};
 
 use crate::{
     db::{BuildHash, BuildInfo, ExecDb, InputHash},
@@ -192,8 +192,9 @@ impl<'a> Executor<'a> {
     /// Add a list of build nodes to be executed. Returns number of nodes affected.
     ///
     /// This method should be called before [`Self::run`].
-    #[tracing::instrument(skip_all)]
     pub fn want(&mut self, build: impl IntoIterator<Item = BuildId>) -> usize {
+        let span = info_span!("Executor::want");
+        let _enter = span.enter();
         if self.build_started {
             panic!("Cannot call want() after run() has been called");
         }
@@ -251,8 +252,9 @@ impl<'a> Executor<'a> {
     }
 
     /// Perform the build.
-    #[tracing::instrument(skip_all)]
     pub fn run(&mut self) -> Result<(), std::io::Error> {
+        let span = info_span!("Executor::run");
+        let _enter = span.enter();
         self.build_started = true;
 
         // Prepare progress
@@ -469,7 +471,6 @@ enum NodeInputKind {
 }
 
 /// Determine if the node is up-to-date by checking its associated files
-#[tracing::instrument(skip_all)]
 fn stat_node(
     db: &dyn ExecDb,
     world: &dyn World,
@@ -478,6 +479,8 @@ fn stat_node(
     build_hash: BuildHash,
     input_hash: InputHash,
 ) -> NodeInputKind {
+    let span = info_span!("stat_node");
+    let _enter = span.enter();
     let txn = db.begin_read();
 
     // Get metadata of build
@@ -594,7 +597,6 @@ fn stat_node(
     NodeInputKind::UpToDate
 }
 
-#[tracing::instrument(skip_all)]
 fn write_build(
     db: &dyn ExecDb,
     graph: &BuildGraph,
@@ -603,6 +605,8 @@ fn write_build(
     build_hash: BuildHash,
     input_hash: InputHash,
 ) {
+    let span = info_span!("write_build");
+    let _enter = span.enter();
     let mut txn = db.begin_write();
 
     let now = world.now();
