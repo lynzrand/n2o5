@@ -87,7 +87,7 @@ Worlds (file system and process spawning):
 - `n2o5::LocalWorld` -- The default world implementation,
   working on the local file system and process space.
 - (Test only) `tests/mock/mod.rs::MockWorld` -- A mocked world for testing.
-  It lives in this repository's tests, not in the published crate.
+  It lives in the crate's test suite, not part of the library's public API.
 
 Databases (build state cache):
 
