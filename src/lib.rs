@@ -19,11 +19,13 @@
 //! use n2o5::progress::NoopProgress;
 //! use n2o5::{ExecConfig, Executor, GraphBuilder, InMemoryDb};
 //!
+//! // Create a build graph
 //! let mut builder = GraphBuilder::new();
+//! // Create files in the graph
 //! let out = builder.add_file("hello.txt");
 //!
-//! // A build node that writes hello.txt. In a real build the callback
-//! // would do the writing; here it does nothing.
+//! // Create a build node that writes hello.txt. In a real build the
+//! // callback would do the writing; here it does nothing.
 //! let node = BuildNode {
 //!     command: BuildMethod::Callback(
 //!         "write_hello".into(),
@@ -34,16 +36,25 @@
 //!     description: None,
 //! };
 //! let id = builder.add_build(node);
+//! // Our graph only has 1 node for now, let's build it
 //! let graph = builder.build().expect("graph should be acyclic");
 //!
+//! // Configurations of the execution environment
+//! // Using the default config with 1 build thread
 //! let config = ExecConfig::default();
+//! // The DB is an ephemeral in-memory one for testing
 //! let db = InMemoryDb::new();
-//! let user_state = (); // available to build callbacks
+//! // No useful user states for us, but it's available to callbacks
+//! let user_state = ();
+//! // Do not display a progress bar
 //! let progress = NoopProgress;
 //!
+//! // Create the executor based on the configs and a local world
 //! let mut executor =
 //!     Executor::new(&config, &graph, &db, &progress, &user_state);
+//! // Tell the executor which nodes to run
 //! executor.want([id]);
+//! // Run the executor
 //! executor.run().expect("build should succeed");
 //! ```
 //!
