@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MPL-2.0"
-description = "A build system as library. An embeddable, hackable build graph executor"
+description = "A build system as library. An embeddable, extensible build graph executor"
 readme = "readme.md"
 repository = "https://github.com/lynzrand/n2o5"
 
