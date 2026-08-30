@@ -19,9 +19,11 @@ use crate::{
     world::{LOCAL_WORLD, World},
 };
 
+/// Configuration for the [`Executor`].
 #[derive(Debug)]
 pub struct ExecConfig {
     /// The maximum amount of actions that can execute in parallel.
+    /// The [`Default`] implementation sets this to 1.
     pub parallelism: usize,
 }
 
@@ -31,6 +33,7 @@ impl Default for ExecConfig {
     }
 }
 
+/// The state of a single build node during the execution of a build.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildStatusKind {
     /// The build hasn't been checked yet
@@ -153,7 +156,8 @@ impl<'a> Executor<'a> {
         Self::with_world_and_progress(cfg, graph, db, world, progress, user_state)
     }
 
-    /// Create a new executor with a custom [`World`] and [`Progress`] implementation.
+    /// Create a new executor with a custom [`World`] and [`Progress`]
+    /// implementation.
     pub fn with_world_and_progress(
         cfg: &'a ExecConfig,
         graph: &'a BuildGraph,
@@ -189,7 +193,8 @@ impl<'a> Executor<'a> {
         }
     }
 
-    /// Add a list of build nodes to be executed. Returns number of nodes affected.
+    /// Add a list of build nodes to be executed. Returns the number of
+    /// nodes affected.
     ///
     /// This method should be called before [`Self::run`].
     pub fn want(&mut self, build: impl IntoIterator<Item = BuildId>) -> usize {

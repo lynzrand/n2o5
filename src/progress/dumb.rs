@@ -4,6 +4,11 @@ use std::io::Write;
 
 use crate::progress::Progress;
 
+/// An append-only console progress reporter.
+///
+/// Prints each started build as a `[done/total] description` line, and
+/// forwards stdout captured from builds to the standard output as it
+/// is produced.
 pub struct DumbConsoleProgress;
 
 impl Progress for DumbConsoleProgress {

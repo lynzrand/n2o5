@@ -27,36 +27,50 @@ pub struct BuildGraph {
 }
 
 impl BuildGraph {
+    /// Iterate over all build nodes in insertion order, paired with
+    /// their [`BuildId`]s.
     pub fn nodes(&self) -> impl Iterator<Item = (BuildId, &BuildNode)> {
         self.nodes.iter().enumerate().map(|(i, n)| (BuildId(i), n))
     }
 
+    /// Iterate over all files known to the graph in insertion order,
+    /// paired with their [`FileId`]s.
     pub fn files(&self) -> impl Iterator<Item = (FileId, &PathBuf)> {
         self.files.iter().enumerate().map(|(i, p)| (FileId(i), p))
     }
 
+    /// Iterate over the build nodes that the given node depends on,
+    /// i.e. the builds that must finish before it can start.
     pub fn build_dependencies(&self, build_id: BuildId) -> impl Iterator<Item = BuildId> + '_ {
         self.graph
             .neighbors_directed(build_id, petgraph::Direction::Outgoing)
     }
 
+    /// Iterate over the build nodes that depend on the given node,
+    /// i.e. the builds that wait for it to finish.
     pub fn build_dependents(&self, build_id: BuildId) -> impl Iterator<Item = BuildId> + '_ {
         self.graph
             .neighbors_directed(build_id, petgraph::Direction::Incoming)
     }
 
+    /// Look up the [`FileId`] of a file by its path, if the path has
+    /// been added to the graph.
     pub fn lookup_fileid(&self, path: impl AsRef<Path>) -> Option<FileId> {
         self.files.get_index_of(path.as_ref()).map(FileId)
     }
 
+    /// Look up the path of a file by its [`FileId`], if it is known to
+    /// the graph.
     pub fn lookup_path(&self, file_id: FileId) -> Option<&PathBuf> {
         self.files.get_index(file_id.0)
     }
 
+    /// Look up a build node by its [`BuildId`], if it is in the graph.
     pub fn lookup_build(&self, build_id: BuildId) -> Option<&BuildNode> {
         self.nodes.get(build_id.0)
     }
 
+    /// The number of build nodes in the graph.
     pub fn node_count(&self) -> usize {
         self.nodes.len()
     }
@@ -76,9 +90,10 @@ impl BuildGraph {
 /// only for checking build timestamps. You must manually add edges using
 /// [`Self::add_build_dep`] to ensure the correct build order.
 ///
-/// Currently, you still need to declare all input and output files in the build
-/// nodes, including the input files that correspond to the output of other build
-/// nodes. This will be relaxed in the future to reduce duplication.
+/// Currently, you still need to declare all input and output files in
+/// the build nodes, including the input files that correspond to the
+/// output of other build nodes. This will be relaxed in the future to
+/// reduce duplication.
 //
 // FIXME: Use the following version once we are done with node shapes & implicit
 // inputs.
@@ -92,7 +107,8 @@ pub struct GraphBuilder {
     graph: BuildGraph,
 }
 
-/// An index that uniquely identifies an (input or output) file in the build graph.
+/// An index that uniquely identifies an (input or output) file in the
+/// build graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FileId(usize);
 
@@ -171,8 +187,11 @@ impl GraphBuilder {
     }
 }
 
+/// Errors returned when constructing a [`BuildGraph`] with
+/// [`GraphBuilder::build`].
 #[derive(Debug, thiserror::Error)]
 pub enum BuildError {
+    /// The graph contains a dependency cycle.
     #[error("The build graph contains a cycle")]
     ContainsCycle,
 }
@@ -180,15 +199,21 @@ pub enum BuildError {
 /// Represents a single node being built.
 #[derive(Debug)]
 pub struct BuildNode {
+    /// The method used to execute this build node.
     pub command: BuildMethod,
+    /// The input files of this node, used for up-to-date checking.
     pub ins: Vec<FileId>,
+    /// The output files produced by this node.
     pub outs: Vec<FileId>,
+    /// An optional human-readable description of this node, shown in
+    /// place of the command by progress reporters.
     pub description: Option<Cow<'static, str>>,
     // pub restat: bool,
 }
 
 impl BuildNode {
-    /// Return a formatter that displays the build command in a human-readable way.
+    /// Return a formatter that displays the build command in a
+    /// human-readable way.
     ///
     /// If the build node has a description, it will be displayed. Otherwise,
     /// it will try to display the command being executed.
@@ -213,7 +238,8 @@ pub enum BuildMethod {
     /// A real, command-line command to run.
     SubCommand(BuildCommand),
 
-    /// A callback function to invoke. Includes a name for version checking & debugging.
+    /// A callback function to invoke. Includes a name for version
+    /// checking & debugging.
     ///
     /// For more info and constraints on the callback, see [`BuildCallback`].
     Callback(SmolStr, BuildCallback),
@@ -239,6 +265,10 @@ impl Debug for BuildMethod {
 }
 
 impl BuildMethod {
+    /// Write a human-readable representation of this method to `w`.
+    ///
+    /// Sub-commands are written shlex-quoted; callbacks and phony
+    /// nodes are written as `<callback: ...>` and `<phony>`.
     pub fn write_human_readable(&self, mut w: impl Write) -> std::fmt::Result {
         match self {
             BuildMethod::SubCommand(cmd) => {
@@ -264,6 +294,10 @@ impl BuildMethod {
     }
 }
 
+/// A [`Display`] formatter for a [`BuildNode`], showing the node's
+/// description, or its command if no description is set.
+///
+/// Created with [`BuildNode::human_readable`].
 pub struct HumanBuildFormatter<'a>(&'a BuildNode);
 
 impl Display for HumanBuildFormatter<'_> {
@@ -276,8 +310,11 @@ impl Display for HumanBuildFormatter<'_> {
     }
 }
 
+/// An external command to run as a build step.
 #[derive(Clone, Debug)]
 pub struct BuildCommand {
+    /// The executable to invoke.
     pub executable: PathBuf,
+    /// The arguments to pass to the executable.
     pub args: Vec<Cow<'static, OsStr>>,
 }

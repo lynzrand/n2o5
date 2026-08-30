@@ -7,7 +7,8 @@ use crate::{
     graph::{BuildGraph, BuildId},
 };
 
-/// A trait that abstracts over how the executor interacts with the outside world.
+/// A trait that abstracts over how the executor interacts with the
+/// outside world.
 ///
 /// All file and execution operations in the executor will be directed through
 /// this trait. You may implement this trait to customize the view of the world
@@ -29,7 +30,8 @@ pub trait World: Send + Sync {
     /// Get the modification time of a file.
     fn mtime(&self, path: &Path) -> std::io::Result<SystemTime>;
 
-    /// Get the current time. Implementations may return a mocked monotonic time.
+    /// Get the current time. Implementations may return a mocked
+    /// monotonic time.
     fn now(&self) -> SystemTime;
 
     /// Execute a given node within the build graph.
@@ -52,6 +54,9 @@ pub trait World: Send + Sync {
 /// The default implementation of [`World`], which interacts with the local
 /// filesystem and spawns local processes.
 pub struct LocalWorld;
+
+/// A shared [`LocalWorld`] instance for convenience, since
+/// [`LocalWorld`] is stateless.
 pub static LOCAL_WORLD: LocalWorld = LocalWorld;
 
 impl World for LocalWorld {

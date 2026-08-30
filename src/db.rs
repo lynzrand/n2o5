@@ -1,9 +1,10 @@
 //! Caches the current build status onto disk.
 //!
-//! The `n2o5` crate only contains the two most simplest implementation, the
-//! [`in_memory`] database, and the [`dumb`] database. For advanced
-//! implementations that actually uses embedded database for better resistance,
-//! check out `n2o5-heed` and `n2o5-redb`.
+//! The `n2o5` crate only contains the two simplest implementations: the
+//! [`in_memory`] database and the [`dumb`] database. For advanced
+//! implementations that use an embedded database for better durability,
+//! check out `n2o5-heed` and `n2o5-redb`. These live in the repository
+//! but are not yet published to crates.io.
 
 pub mod in_memory;
 
@@ -109,16 +110,32 @@ pub trait ExecDb: Send + Sync {
 
 /// Trait for reading from the build database.
 pub trait DbReader {
+    /// Get the stored [`BuildInfo`] of the build identified by `hash`,
+    /// if any.
     fn get_build_info(&self, hash: BuildHash) -> Option<BuildInfo>;
+
+    /// Get the stored [`FileInfo`] of the file at `path`, if any.
     fn get_file_info(&self, path: &Path) -> Option<FileInfo>;
 }
 
 /// Trait for writing to the build database.
 pub trait DbWriter {
+    /// Store the [`BuildInfo`] of the build identified by `hash`.
     fn set_build_info(&mut self, hash: BuildHash, info: BuildInfo);
+
+    /// Remove the stored [`BuildInfo`] of the build identified by
+    /// `hash`, causing it to be rebuilt.
     fn invalidate_build(&mut self, hash: BuildHash);
+
+    /// Store the [`FileInfo`] of the file at `path`.
     fn set_file_info(&mut self, path: &Path, info: FileInfo);
+
+    /// Remove the stored [`FileInfo`] of the file at `path`.
     fn invalidate_file(&mut self, path: &Path);
 
+    /// Commit the transaction, persisting the writes made through it.
+    ///
+    /// The implementations shipped in this crate apply writes
+    /// immediately, so committing is a no-op for them.
     fn commit(self: Box<Self>);
 }

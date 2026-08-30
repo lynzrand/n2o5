@@ -6,11 +6,18 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::progress::Progress;
 
+/// A single-line console progress bar, backed by
+/// [`indicatif`](https://docs.rs/indicatif).
+///
+/// Shows a `[bar] done/total: description` line that updates in place,
+/// suspends the bar to print stdout captured from builds, and clears
+/// itself when the build finishes.
 pub struct FancyConsoleProgress {
     progress: indicatif::ProgressBar,
 }
 
 impl FancyConsoleProgress {
+    /// Create a new fancy console progress reporter.
     pub fn new() -> Self {
         Self {
             progress: ProgressBar::no_length().with_style(

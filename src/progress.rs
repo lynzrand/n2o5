@@ -59,7 +59,8 @@ pub struct ProgressConfig {
 pub struct ProgressStatus {
     /// The total number of builds to runs
     pub total: usize,
-    /// The number of builds that have started, including those that are finished.
+    /// The number of builds that have started, including those that
+    /// are finished.
     pub started: usize,
     /// The total number of builds finished, either successfully, unsuccessfully
     /// or skipped.

@@ -13,12 +13,18 @@ use super::DbWriter;
 #[cfg(feature = "bincode")]
 use bincode::{Decode, Encode};
 
+/// An in-memory [`ExecDb`] implementation.
+///
+/// Data is lost when the instance is dropped, so this is mainly useful
+/// for testing and for ephemeral builds that do not need their build
+/// cache to survive the process.
 #[derive(Clone)]
 pub struct InMemoryDb {
     inner: Arc<RwLock<DbInner>>,
 }
 
 impl InMemoryDb {
+    /// Create a new, empty database.
     pub fn new() -> Self {
         Self {
             inner: Arc::new(RwLock::new(DbInner {
@@ -44,8 +50,10 @@ pub(super) struct DbInner {
     file_info: HashMap<PathBuf, FileInfo>,
 }
 
+/// A read transaction of the [`InMemoryDb`].
 pub struct Reader<'r>(pub(super) RwLockReadGuard<'r, DbInner>);
 
+/// A write transaction of the [`InMemoryDb`].
 pub struct Writer<'w>(pub(super) RwLockWriteGuard<'w, DbInner>);
 
 impl ExecDb for InMemoryDb {
