@@ -12,8 +12,8 @@ use crate::{
 /// Generate a identity hash for this build.
 ///
 /// The hash is independent of the actual layout of the graph or the build,
-/// e.g. the [`FileId`]s used to represent files. However, it is still
-/// sensitive to the order of output files.
+/// e.g. the [`FileId`](crate::graph::FileId)s used to represent files.
+/// However, it is still sensitive to the order of output files.
 pub fn hash_build(node: &BuildNode, graph: &BuildGraph) -> BuildHash {
     let mut hasher = Xxh3::new();
 

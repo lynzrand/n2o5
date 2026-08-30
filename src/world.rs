@@ -35,7 +35,8 @@ pub trait World: Send + Sync {
     /// Execute a given node within the build graph.
     ///
     /// This method passes the build graph and the build ID of the node to be
-    /// executed, instead of just the [`BuildMethod`]. This allows the
+    /// executed, instead of just the
+    /// [`BuildMethod`](crate::graph::BuildMethod). This allows the
     /// implementor to apply a more custom logic based on the node and graph
     /// structure, such as sandboxing or caching.
     ///
