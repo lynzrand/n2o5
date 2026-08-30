@@ -2,7 +2,6 @@ pub mod db;
 pub mod exec;
 pub mod graph;
 pub mod progress;
-pub mod shape;
 pub mod world;
 
 // Re-exports for convenience
