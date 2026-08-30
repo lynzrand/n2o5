@@ -205,7 +205,7 @@ impl BuildNode {
 ///
 /// The callback will be executed in a threadpool. It should not spawn new
 /// threads on its own. This might be changed in the future.
-type BuildCallback =
+pub type BuildCallback =
     Box<dyn Fn(&dyn Any) -> Result<(), Box<dyn Error + Send + Sync>> + Send + Sync>;
 
 /// Represents the method to build the target within a build node.
